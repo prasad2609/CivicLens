@@ -11,6 +11,8 @@ import {
   ShieldCheck,
   PlusCircle,
   Eye,
+  Compass,
+  Loader2,
 } from 'lucide-react';
 import { civicStore } from '@/lib/store';
 import { CivicIssue } from '@/types';
@@ -24,6 +26,8 @@ export default function PublicMapPage() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [wardFilter, setWardFilter] = useState('all');
   const [search, setSearch] = useState('');
+  const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
+  const [locating, setLocating] = useState(false);
 
   const categories = civicStore.getCategories();
   const jurisdictions = civicStore.getJurisdictions();
@@ -55,6 +59,48 @@ export default function PublicMapPage() {
     }
     return true;
   });
+
+  const handleLocateMe = async () => {
+    setLocating(true);
+    const applyCoords = (lat: number, lng: number) => {
+      setUserLocation([lat, lng]);
+      setLocating(false);
+    };
+
+    if (typeof window !== 'undefined' && navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          applyCoords(Number(pos.coords.latitude.toFixed(6)), Number(pos.coords.longitude.toFixed(6)));
+        },
+        async () => {
+          try {
+            const res = await fetch('/api/geocode?action=ip');
+            const data = await res.json();
+            if (data.success && typeof data.lat === 'number') {
+              applyCoords(data.lat, data.lng);
+              return;
+            }
+          } catch {
+            // ignore
+          }
+          setLocating(false);
+        },
+        { enableHighAccuracy: true, timeout: 5000 }
+      );
+    } else {
+      try {
+        const res = await fetch('/api/geocode?action=ip');
+        const data = await res.json();
+        if (data.success && typeof data.lat === 'number') {
+          applyCoords(data.lat, data.lng);
+          return;
+        }
+      } catch {
+        // ignore
+      }
+      setLocating(false);
+    }
+  };
 
   return (
     <div className="h-[calc(100vh-65px-32px)] flex flex-col overflow-hidden bg-slate-100">
@@ -117,6 +163,17 @@ export default function PublicMapPage() {
             ))}
           </select>
 
+          <button
+            type="button"
+            onClick={handleLocateMe}
+            disabled={locating}
+            className="inline-flex items-center gap-1.5 px-3 py-1 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 rounded-md font-medium text-xs transition shadow-xs"
+            title="Pan map to my location"
+          >
+            <Compass className={`w-3.5 h-3.5 text-blue-600 ${locating ? 'animate-spin' : ''}`} />
+            <span>{locating ? 'Locating...' : 'My Location'}</span>
+          </button>
+
           <Link
             href="/report"
             className="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-semibold text-xs transition shadow-xs"
@@ -134,6 +191,8 @@ export default function PublicMapPage() {
             issues={filteredIssues}
             selectedIssueId={selectedIssue?.id}
             onSelectIssue={(issue) => setSelectedIssue(issue)}
+            pickerLocation={userLocation}
+            interactivePicker={userLocation !== null}
             className="h-full w-full"
           />
 

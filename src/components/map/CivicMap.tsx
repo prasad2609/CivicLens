@@ -99,6 +99,12 @@ export const CivicMap: React.FC<CivicMapProps> = ({
           });
         }
 
+        setTimeout(() => {
+          if (localMap) {
+            localMap.invalidateSize();
+          }
+        }, 200);
+
         // Render initial markers
         renderMarkers(L, localMap, markersLayer);
       } catch (err) {
@@ -106,8 +112,16 @@ export const CivicMap: React.FC<CivicMapProps> = ({
       }
     });
 
+    const handleWindowResize = () => {
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.invalidateSize();
+      }
+    };
+    window.addEventListener('resize', handleWindowResize);
+
     return () => {
       isMounted = false;
+      window.removeEventListener('resize', handleWindowResize);
       if (localMap) {
         try {
           localMap.remove();
@@ -127,6 +141,24 @@ export const CivicMap: React.FC<CivicMapProps> = ({
       pickerMarkerRef.current = null;
     };
   }, []); // Only initialize map once per mount!
+
+  // Fly/pan to new pickerLocation when it changes
+  useEffect(() => {
+    if (!mapInstanceRef.current || !pickerLocation) return;
+    try {
+      const map = mapInstanceRef.current;
+      const center = map.getCenter();
+      const [lat, lng] = pickerLocation;
+      const latDiff = Math.abs(center.lat - lat);
+      const lngDiff = Math.abs(center.lng - lng);
+      if (latDiff > 0.0001 || lngDiff > 0.0001) {
+        const targetZoom = map.getZoom() < 15 ? 16 : map.getZoom();
+        map.flyTo([lat, lng], targetZoom, { duration: 0.8 });
+      }
+    } catch {
+      // ignore
+    }
+  }, [pickerLocation]);
 
   // Update markers and picker position reactively when dependencies change
   useEffect(() => {
@@ -171,6 +203,12 @@ export const CivicMap: React.FC<CivicMapProps> = ({
           icon: pickerIcon,
           draggable: true,
         }).addTo(markersLayer);
+
+        pMarker.bindTooltip('📍 Selected Issue Location (Drag pin to adjust)', {
+          permanent: false,
+          direction: 'top',
+          offset: [0, -32],
+        });
 
         pMarker.on('dragend', (e: any) => {
           const pos = e.target.getLatLng();
