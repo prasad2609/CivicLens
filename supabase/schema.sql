@@ -1,6 +1,7 @@
 -- ====================================================================
 -- CivicLens: Production PostgreSQL Schema with Supabase RLS
 -- Constituency Accountability & Civic Transparency Platform
+-- Resilient relational schema with high-performance indexing
 -- ====================================================================
 
 -- 1. EXTENSIONS
@@ -73,7 +74,7 @@ END $$;
 
 -- 3. DEPARTMENTS
 CREATE TABLE IF NOT EXISTS departments (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id VARCHAR(100) PRIMARY KEY DEFAULT gen_random_uuid()::text,
     name VARCHAR(255) NOT NULL,
     code VARCHAR(50) NOT NULL UNIQUE,
     description TEXT,
@@ -85,7 +86,7 @@ CREATE TABLE IF NOT EXISTS departments (
 
 -- 4. JURISDICTIONS (Wards / Zones)
 CREATE TABLE IF NOT EXISTS jurisdictions (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id VARCHAR(100) PRIMARY KEY DEFAULT gen_random_uuid()::text,
     name VARCHAR(255) NOT NULL,
     name_ta VARCHAR(255),
     ward_number VARCHAR(50) NOT NULL UNIQUE,
@@ -99,7 +100,7 @@ CREATE TABLE IF NOT EXISTS jurisdictions (
 
 -- 5. ISSUE CATEGORIES
 CREATE TABLE IF NOT EXISTS issue_categories (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id VARCHAR(100) PRIMARY KEY DEFAULT gen_random_uuid()::text,
     name VARCHAR(255) NOT NULL,
     name_ta VARCHAR(255),
     code VARCHAR(50) NOT NULL UNIQUE,
@@ -113,36 +114,37 @@ CREATE TABLE IF NOT EXISTS issue_categories (
 
 -- 6. ROUTING RULES
 CREATE TABLE IF NOT EXISTS routing_rules (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    category_id UUID NOT NULL REFERENCES issue_categories(id) ON DELETE CASCADE,
-    jurisdiction_id UUID REFERENCES jurisdictions(id) ON DELETE SET NULL,
-    department_id UUID NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
+    id VARCHAR(100) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    category_id VARCHAR(100) NOT NULL,
+    jurisdiction_id VARCHAR(100),
+    department_id VARCHAR(100) NOT NULL,
     priority INT DEFAULT 1,
     active BOOLEAN DEFAULT true,
     created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- 7. PROFILES (Extends auth.users or standalone platform users)
+-- 7. PROFILES
 CREATE TABLE IF NOT EXISTS profiles (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id VARCHAR(100) PRIMARY KEY DEFAULT gen_random_uuid()::text,
     auth_user_id UUID UNIQUE,
     full_name VARCHAR(255) NOT NULL,
     email VARCHAR(255) NOT NULL UNIQUE,
     phone VARCHAR(50),
     role user_role DEFAULT 'citizen' NOT NULL,
-    department_id UUID REFERENCES departments(id) ON DELETE SET NULL,
+    department_id VARCHAR(100),
     preferred_language VARCHAR(10) DEFAULT 'en',
     area VARCHAR(255),
+    password_hash VARCHAR(255),
     created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL,
     updated_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
 -- 8. CIVIC ISSUES (With AI image verification status)
 CREATE TABLE IF NOT EXISTS issues (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id VARCHAR(100) PRIMARY KEY DEFAULT gen_random_uuid()::text,
     complaint_code VARCHAR(30) NOT NULL UNIQUE,
-    citizen_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
-    category_id UUID NOT NULL REFERENCES issue_categories(id),
+    citizen_id VARCHAR(100) NOT NULL,
+    category_id VARCHAR(100) NOT NULL,
     title VARCHAR(255) NOT NULL,
     description TEXT NOT NULL,
     severity issue_severity DEFAULT 'medium' NOT NULL,
@@ -150,10 +152,10 @@ CREATE TABLE IF NOT EXISTS issues (
     latitude DOUBLE PRECISION NOT NULL,
     longitude DOUBLE PRECISION NOT NULL,
     location_text TEXT NOT NULL,
-    jurisdiction_id UUID REFERENCES jurisdictions(id) ON DELETE SET NULL,
-    department_id UUID REFERENCES departments(id) ON DELETE SET NULL,
-    assigned_officer_id UUID REFERENCES profiles(id) ON DELETE SET NULL,
-    assigned_field_worker_id UUID REFERENCES profiles(id) ON DELETE SET NULL,
+    jurisdiction_id VARCHAR(100),
+    department_id VARCHAR(100),
+    assigned_officer_id VARCHAR(100),
+    assigned_field_worker_id VARCHAR(100),
     is_overdue BOOLEAN DEFAULT false,
     sla_target_date TIMESTAMPTZ,
     ai_verification_status VARCHAR(50) DEFAULT 'unverified',
@@ -165,9 +167,9 @@ CREATE TABLE IF NOT EXISTS issues (
 
 -- 9. ISSUE EVIDENCE (With CvT-13 AI authenticity metadata)
 CREATE TABLE IF NOT EXISTS issue_evidence (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    issue_id UUID NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
-    uploaded_by UUID NOT NULL REFERENCES profiles(id),
+    id VARCHAR(100) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    issue_id VARCHAR(100) NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+    uploaded_by VARCHAR(100) NOT NULL,
     file_path TEXT NOT NULL,
     file_type VARCHAR(50) DEFAULT 'image/jpeg',
     evidence_type VARCHAR(50) DEFAULT 'citizen_report',
@@ -178,11 +180,11 @@ CREATE TABLE IF NOT EXISTS issue_evidence (
 
 -- 10. ASSIGNMENTS
 CREATE TABLE IF NOT EXISTS assignments (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    issue_id UUID NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
-    officer_id UUID REFERENCES profiles(id) ON DELETE SET NULL,
-    field_worker_id UUID REFERENCES profiles(id) ON DELETE SET NULL,
-    assigned_by UUID REFERENCES profiles(id),
+    id VARCHAR(100) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    issue_id VARCHAR(100) NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+    officer_id VARCHAR(100),
+    field_worker_id VARCHAR(100),
+    assigned_by VARCHAR(100),
     notes TEXT,
     status VARCHAR(50) DEFAULT 'active',
     assigned_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL,
@@ -191,9 +193,9 @@ CREATE TABLE IF NOT EXISTS assignments (
 
 -- 11. TIMELINE EVENTS
 CREATE TABLE IF NOT EXISTS timeline_events (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    issue_id UUID NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
-    actor_id UUID REFERENCES profiles(id) ON DELETE SET NULL,
+    id VARCHAR(100) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    issue_id VARCHAR(100) NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+    actor_id VARCHAR(100),
     actor_role VARCHAR(50) NOT NULL,
     actor_name VARCHAR(255) NOT NULL,
     event_type VARCHAR(100) NOT NULL,
@@ -206,9 +208,9 @@ CREATE TABLE IF NOT EXISTS timeline_events (
 
 -- 12. VERIFICATIONS (Citizen resolution review)
 CREATE TABLE IF NOT EXISTS verifications (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    issue_id UUID NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
-    citizen_id UUID NOT NULL REFERENCES profiles(id),
+    id VARCHAR(100) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    issue_id VARCHAR(100) NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+    citizen_id VARCHAR(100) NOT NULL,
     result verification_result NOT NULL,
     comment TEXT,
     new_evidence_url TEXT,
@@ -217,10 +219,10 @@ CREATE TABLE IF NOT EXISTS verifications (
 
 -- 13. ESCALATIONS
 CREATE TABLE IF NOT EXISTS escalations (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id VARCHAR(100) PRIMARY KEY DEFAULT gen_random_uuid()::text,
     escalation_code VARCHAR(30) NOT NULL UNIQUE,
-    issue_id UUID NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
-    raised_by UUID NOT NULL REFERENCES profiles(id),
+    issue_id VARCHAR(100) NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+    raised_by VARCHAR(100) NOT NULL,
     reason TEXT NOT NULL,
     details TEXT,
     status VARCHAR(50) DEFAULT 'pending_review',
@@ -230,7 +232,7 @@ CREATE TABLE IF NOT EXISTS escalations (
 
 -- 14. PUBLIC DEVELOPMENT PROJECTS
 CREATE TABLE IF NOT EXISTS projects (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id VARCHAR(100) PRIMARY KEY DEFAULT gen_random_uuid()::text,
     name VARCHAR(255) NOT NULL,
     description TEXT,
     category VARCHAR(100) NOT NULL,
@@ -250,19 +252,19 @@ CREATE TABLE IF NOT EXISTS projects (
 
 -- 15. NOTIFICATIONS
 CREATE TABLE IF NOT EXISTS notifications (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    id VARCHAR(100) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    user_id VARCHAR(100) NOT NULL,
     title VARCHAR(255) NOT NULL,
     message TEXT NOT NULL,
-    related_issue_id UUID REFERENCES issues(id) ON DELETE CASCADE,
+    related_issue_id VARCHAR(100),
     is_read BOOLEAN DEFAULT false,
     created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
 -- 16. AUDIT LOGS (Immutable tracking)
 CREATE TABLE IF NOT EXISTS audit_logs (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    actor_id UUID REFERENCES profiles(id) ON DELETE SET NULL,
+    id VARCHAR(100) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    actor_id VARCHAR(100),
     actor_email VARCHAR(255),
     actor_role VARCHAR(50),
     action VARCHAR(100) NOT NULL,
@@ -297,7 +299,6 @@ CREATE INDEX IF NOT EXISTS idx_projects_status ON projects(status);
 -- AUTOMATED TRIGGERS & FUNCTIONS
 -- ====================================================================
 
--- Trigger to auto-update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -322,7 +323,7 @@ CREATE TRIGGER trg_projects_updated_at
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- Sequential Complaint Code Generator Trigger
-CREATE SEQUENCE IF NOT EXISTS complaint_code_seq START 101;
+CREATE SEQUENCE IF NOT EXISTS complaint_code_seq START 130;
 
 CREATE OR REPLACE FUNCTION generate_complaint_code()
 RETURNS TRIGGER AS $$
@@ -357,20 +358,6 @@ SELECT
 FROM issues;
 
 -- ====================================================================
--- STORAGE BUCKETS (If storage extension active)
--- ====================================================================
-DO $$
-BEGIN
-    IF EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = 'storage') THEN
-        INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-        VALUES 
-            ('evidence-photos', 'evidence-photos', true, 5242880, ARRAY['image/jpeg', 'image/png', 'image/webp', 'image/heic']),
-            ('project-documents', 'project-documents', true, 10485760, ARRAY['application/pdf', 'image/jpeg', 'image/png'])
-        ON CONFLICT (id) DO UPDATE SET public = EXCLUDED.public;
-    END IF;
-END $$;
-
--- ====================================================================
 -- ROW LEVEL SECURITY (RLS) POLICIES
 -- ====================================================================
 ALTER TABLE departments ENABLE ROW LEVEL SECURITY;
@@ -388,46 +375,67 @@ ALTER TABLE projects ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE audit_logs ENABLE ROW LEVEL SECURITY;
 
--- Public Reference Tables (Read-Only to Public)
-CREATE POLICY "Public can view departments" ON departments FOR SELECT USING (true);
-CREATE POLICY "Public can view jurisdictions" ON jurisdictions FOR SELECT USING (true);
-CREATE POLICY "Public can view issue categories" ON issue_categories FOR SELECT USING (true);
-CREATE POLICY "Public can view routing rules" ON routing_rules FOR SELECT USING (true);
-CREATE POLICY "Public can view projects" ON projects FOR SELECT USING (true);
+DO $$ BEGIN
+    DROP POLICY IF EXISTS "Public can view departments" ON departments;
+    CREATE POLICY "Public can view departments" ON departments FOR SELECT USING (true);
 
--- Profiles
-CREATE POLICY "Profiles viewable by authenticated users" ON profiles
-    FOR SELECT USING (true);
+    DROP POLICY IF EXISTS "Public can view jurisdictions" ON jurisdictions;
+    CREATE POLICY "Public can view jurisdictions" ON jurisdictions FOR SELECT USING (true);
 
-CREATE POLICY "Users can update own profile" ON profiles
-    FOR UPDATE USING (auth.uid() = auth_user_id);
+    DROP POLICY IF EXISTS "Public can view issue categories" ON issue_categories;
+    CREATE POLICY "Public can view issue categories" ON issue_categories FOR SELECT USING (true);
 
--- Civic Issues
-CREATE POLICY "Public can view open complaints" ON issues
-    FOR SELECT USING (true);
+    DROP POLICY IF EXISTS "Public can view routing rules" ON routing_rules;
+    CREATE POLICY "Public can view routing rules" ON routing_rules FOR SELECT USING (true);
 
-CREATE POLICY "Citizens can insert complaints" ON issues
-    FOR INSERT WITH CHECK (true);
+    DROP POLICY IF EXISTS "Public can view projects" ON projects;
+    CREATE POLICY "Public can view projects" ON projects FOR SELECT USING (true);
 
-CREATE POLICY "Authorized users can update complaints" ON issues
-    FOR UPDATE USING (true);
+    DROP POLICY IF EXISTS "Profiles viewable by all" ON profiles;
+    CREATE POLICY "Profiles viewable by all" ON profiles FOR SELECT USING (true);
 
--- Evidence & Timelines
-CREATE POLICY "Evidence viewable by all" ON issue_evidence FOR SELECT USING (true);
-CREATE POLICY "Evidence insertable by all" ON issue_evidence FOR INSERT WITH CHECK (true);
+    DROP POLICY IF EXISTS "Profiles insertable by all" ON profiles;
+    CREATE POLICY "Profiles insertable by all" ON profiles FOR INSERT WITH CHECK (true);
 
-CREATE POLICY "Timeline viewable by all" ON timeline_events FOR SELECT USING (true);
-CREATE POLICY "Timeline insertable by authorized" ON timeline_events FOR INSERT WITH CHECK (true);
+    DROP POLICY IF EXISTS "Profiles updatable by all" ON profiles;
+    CREATE POLICY "Profiles updatable by all" ON profiles FOR UPDATE USING (true);
 
-CREATE POLICY "Verifications viewable by all" ON verifications FOR SELECT USING (true);
-CREATE POLICY "Verifications insertable by citizens" ON verifications FOR INSERT WITH CHECK (true);
+    DROP POLICY IF EXISTS "Public can view open complaints" ON issues;
+    CREATE POLICY "Public can view open complaints" ON issues FOR SELECT USING (true);
 
-CREATE POLICY "Escalations viewable by all" ON escalations FOR SELECT USING (true);
-CREATE POLICY "Escalations insertable by citizens" ON escalations FOR INSERT WITH CHECK (true);
+    DROP POLICY IF EXISTS "Citizens can insert complaints" ON issues;
+    CREATE POLICY "Citizens can insert complaints" ON issues FOR INSERT WITH CHECK (true);
 
--- Notifications & Audit
-CREATE POLICY "Users can view own notifications" ON notifications
-    FOR SELECT USING (true);
+    DROP POLICY IF EXISTS "Authorized users can update complaints" ON issues;
+    CREATE POLICY "Authorized users can update complaints" ON issues FOR UPDATE USING (true);
 
-CREATE POLICY "Audit logs viewable by admins" ON audit_logs
-    FOR SELECT USING (true);
+    DROP POLICY IF EXISTS "Evidence viewable by all" ON issue_evidence;
+    CREATE POLICY "Evidence viewable by all" ON issue_evidence FOR SELECT USING (true);
+
+    DROP POLICY IF EXISTS "Evidence insertable by all" ON issue_evidence;
+    CREATE POLICY "Evidence insertable by all" ON issue_evidence FOR INSERT WITH CHECK (true);
+
+    DROP POLICY IF EXISTS "Timeline viewable by all" ON timeline_events;
+    CREATE POLICY "Timeline viewable by all" ON timeline_events FOR SELECT USING (true);
+
+    DROP POLICY IF EXISTS "Timeline insertable by authorized" ON timeline_events;
+    CREATE POLICY "Timeline insertable by authorized" ON timeline_events FOR INSERT WITH CHECK (true);
+
+    DROP POLICY IF EXISTS "Verifications viewable by all" ON verifications;
+    CREATE POLICY "Verifications viewable by all" ON verifications FOR SELECT USING (true);
+
+    DROP POLICY IF EXISTS "Verifications insertable by citizens" ON verifications;
+    CREATE POLICY "Verifications insertable by citizens" ON verifications FOR INSERT WITH CHECK (true);
+
+    DROP POLICY IF EXISTS "Escalations viewable by all" ON escalations;
+    CREATE POLICY "Escalations viewable by all" ON escalations FOR SELECT USING (true);
+
+    DROP POLICY IF EXISTS "Escalations insertable by citizens" ON escalations;
+    CREATE POLICY "Escalations insertable by citizens" ON escalations FOR INSERT WITH CHECK (true);
+
+    DROP POLICY IF EXISTS "Users can view own notifications" ON notifications;
+    CREATE POLICY "Users can view own notifications" ON notifications FOR SELECT USING (true);
+
+    DROP POLICY IF EXISTS "Audit logs viewable by all" ON audit_logs;
+    CREATE POLICY "Audit logs viewable by all" ON audit_logs FOR SELECT USING (true);
+END $$;

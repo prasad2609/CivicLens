@@ -7,7 +7,8 @@ export async function POST(
 ) {
   try {
     const body = await req.json();
-    const { workerId, note, officerId } = body;
+    const workerId = body.workerId || body.fieldWorkerId;
+    const { note, officerId } = body;
 
     if (!workerId) {
       return NextResponse.json(

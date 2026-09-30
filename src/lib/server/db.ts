@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { queryPg, isPgConfigured } from './pgPool';
 import {
   CivicIssue,
   UserProfile,
@@ -120,6 +121,96 @@ class ServerDatabase {
       fs.writeFileSync(DB_PATH, JSON.stringify(this.state, null, 2), 'utf-8');
     } catch (e) {
       console.error('Failed to write to server_db.json', e);
+    }
+  }
+
+  public async syncIssueToSupabase(issue: CivicIssue): Promise<void> {
+    if (!isPgConfigured) return;
+    try {
+      await queryPg(
+        `INSERT INTO issues (
+           id, complaint_code, citizen_id, category_id, title, description, severity, status,
+           latitude, longitude, location_text, jurisdiction_id, department_id,
+           assigned_officer_id, assigned_field_worker_id, is_overdue, sla_target_date,
+           ai_verification_status, created_at, updated_at, resolved_at, closed_at
+         )
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
+         ON CONFLICT (id) DO UPDATE SET
+           status = EXCLUDED.status,
+           severity = EXCLUDED.severity,
+           ai_verification_status = EXCLUDED.ai_verification_status,
+           assigned_officer_id = EXCLUDED.assigned_officer_id,
+           assigned_field_worker_id = EXCLUDED.assigned_field_worker_id,
+           is_overdue = EXCLUDED.is_overdue,
+           resolved_at = EXCLUDED.resolved_at,
+           closed_at = EXCLUDED.closed_at,
+           updated_at = EXCLUDED.updated_at;`,
+        [
+          issue.id,
+          issue.complaint_code,
+          issue.citizen_id,
+          issue.category_id,
+          issue.title,
+          issue.description,
+          issue.severity,
+          issue.status,
+          issue.latitude,
+          issue.longitude,
+          issue.location_text,
+          issue.jurisdiction_id || null,
+          issue.department_id || null,
+          issue.assigned_officer_id || null,
+          issue.assigned_field_worker_id || null,
+          Boolean(issue.is_overdue),
+          issue.sla_target_date || null,
+          issue.ai_verification_status || 'unverified',
+          issue.created_at,
+          issue.updated_at || issue.created_at,
+          issue.resolved_at || null,
+          issue.closed_at || null,
+        ]
+      );
+
+      if (issue.evidence && Array.isArray(issue.evidence)) {
+        for (const ev of issue.evidence) {
+          await queryPg(
+            `INSERT INTO issue_evidence (id, issue_id, uploaded_by, file_path, file_type, evidence_type, caption, authenticity, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+             ON CONFLICT (id) DO UPDATE SET authenticity = EXCLUDED.authenticity;`,
+            [
+              ev.id,
+              issue.id,
+              ev.uploaded_by || issue.citizen_id,
+              ev.file_path,
+              ev.file_type || 'image/jpeg',
+              ev.evidence_type || 'citizen_report',
+              ev.caption || '',
+              ev.authenticity ? JSON.stringify(ev.authenticity) : null,
+              ev.created_at || issue.created_at,
+            ]
+          );
+        }
+      }
+
+      if (issue.verification) {
+        const v = issue.verification;
+        await queryPg(
+          `INSERT INTO verifications (id, issue_id, citizen_id, result, comment, new_evidence_url, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
+           ON CONFLICT (id) DO UPDATE SET result = EXCLUDED.result, comment = EXCLUDED.comment;`,
+          [
+            v.id,
+            issue.id,
+            v.citizen_id,
+            v.result,
+            v.comment || '',
+            v.new_evidence_url || null,
+            v.created_at || new Date().toISOString(),
+          ]
+        );
+      }
+    } catch (e) {
+      console.error('Background sync to Supabase failed:', e);
     }
   }
 
@@ -399,6 +490,7 @@ class ServerDatabase {
     });
 
     this.save();
+    this.syncIssueToSupabase(newIssue).catch((err) => console.error('Supabase async sync error:', err));
     return newIssue;
   }
 
@@ -490,6 +582,7 @@ class ServerDatabase {
     }
 
     this.save();
+    this.syncIssueToSupabase(issue).catch((err) => console.error('Supabase async sync error:', err));
     return issue;
   }
 
@@ -547,6 +640,7 @@ class ServerDatabase {
     });
 
     this.save();
+    this.syncIssueToSupabase(issue).catch((err) => console.error('Supabase async sync error:', err));
     return issue;
   }
 
@@ -613,6 +707,7 @@ class ServerDatabase {
     }
 
     this.save();
+    this.syncIssueToSupabase(issue).catch((err) => console.error('Supabase async sync error:', err));
     return issue;
   }
 
@@ -721,6 +816,7 @@ class ServerDatabase {
     }
 
     this.save();
+    this.syncIssueToSupabase(issue).catch((err) => console.error('Supabase async sync error:', err));
     return issue;
   }
 
@@ -789,6 +885,7 @@ class ServerDatabase {
     });
 
     this.save();
+    this.syncIssueToSupabase(issue).catch((err) => console.error('Supabase async sync error:', err));
     return issue;
   }
 

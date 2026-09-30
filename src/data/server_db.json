@@ -340,6 +340,231 @@
   ],
   "issues": [
     {
+      "id": "issue-1790794156198",
+      "complaint_code": "CL-2026-000125",
+      "citizen_id": "user-citizen-1",
+      "citizen_name": "Dinesh Karthik",
+      "citizen_phone": "+91 98401 23456",
+      "category_id": "cat-roads",
+      "category_name": "Roads & Potholes",
+      "category_code": "ROADS",
+      "title": "Real-Time Supabase Sync Pothole Confirmation",
+      "description": "Verifying that complaints reported on CivicLens reflect instantly in Supabase PostgreSQL.",
+      "severity": "high",
+      "status": "assigned",
+      "latitude": 13.065,
+      "longitude": 80.255,
+      "location_text": "Live Sync Road, Ward 1",
+      "jurisdiction_id": "jur-ward-01",
+      "department_id": "dept-roads",
+      "department_name": "Roads & Bridges Department",
+      "is_overdue": false,
+      "sla_target_date": "2026-10-05T18:49:16.198Z",
+      "created_at": "2026-09-30T18:49:16.198Z",
+      "updated_at": "2026-09-30T18:49:16.198Z",
+      "evidence": [
+        {
+          "id": "ev-1790794156198",
+          "issue_id": "issue-1790794156198",
+          "uploaded_by": "user-citizen-1",
+          "uploader_name": "Dinesh Karthik",
+          "uploader_role": "citizen",
+          "file_path": "data:image/jpeg;base64,/9j/4AAQSkZJRg==",
+          "file_type": "image/jpeg",
+          "evidence_type": "citizen_report",
+          "caption": "Live sync proof photo",
+          "authenticity": {
+            "is_ai_generated": false,
+            "ai_probability": 0.02,
+            "real_probability": 0.98,
+            "confidence": 0.98,
+            "verdict": "real",
+            "engine": "microsoft/cvt-13"
+          },
+          "created_at": "2026-09-30T18:49:16.198Z"
+        }
+      ],
+      "ai_verification_status": "verified_real",
+      "timeline": [
+        {
+          "id": "t-1790794156198-1",
+          "issue_id": "issue-1790794156198",
+          "actor_id": "user-citizen-1",
+          "actor_name": "Dinesh Karthik",
+          "actor_role": "citizen",
+          "event_type": "SUBMITTED",
+          "new_status": "submitted",
+          "note": "Citizen registered civic issue with severity level: HIGH.",
+          "created_at": "2026-09-30T18:49:16.198Z"
+        },
+        {
+          "id": "t-1790794156198-2",
+          "issue_id": "issue-1790794156198",
+          "actor_name": "CivicLens Smart Routing Engine",
+          "actor_role": "system",
+          "event_type": "AUTO_ROUTED",
+          "old_status": "submitted",
+          "new_status": "assigned",
+          "note": "Auto-routed to Roads & Bridges Department (Category rule matched: Roads & Bridges Department). Target SLA: 5 days.",
+          "created_at": "2026-09-30T18:49:16.198Z"
+        }
+      ]
+    },
+    {
+      "id": "issue-1790794125348",
+      "complaint_code": "CL-2026-000124",
+      "citizen_id": "user-citizen-1",
+      "citizen_name": "Dinesh Karthik",
+      "citizen_phone": "+91 98401 23456",
+      "category_id": "cat-roads",
+      "category_name": "Roads & Potholes",
+      "category_code": "ROADS",
+      "title": "Real-Time Supabase Sync Pothole Confirmation",
+      "description": "Verifying that complaints reported on CivicLens reflect instantly in Supabase PostgreSQL.",
+      "severity": "high",
+      "status": "assigned",
+      "latitude": 13.065,
+      "longitude": 80.255,
+      "location_text": "Live Sync Road, Ward 1",
+      "jurisdiction_id": "jur-ward-01",
+      "department_id": "dept-roads",
+      "department_name": "Roads & Bridges Department",
+      "is_overdue": false,
+      "sla_target_date": "2026-10-05T18:48:45.348Z",
+      "created_at": "2026-09-30T18:48:45.348Z",
+      "updated_at": "2026-09-30T18:48:45.348Z",
+      "evidence": [
+        {
+          "id": "ev-1790794125348",
+          "issue_id": "issue-1790794125348",
+          "uploaded_by": "user-citizen-1",
+          "uploader_name": "Dinesh Karthik",
+          "uploader_role": "citizen",
+          "file_path": "data:image/jpeg;base64,/9j/4AAQSkZJRg==",
+          "file_type": "image/jpeg",
+          "evidence_type": "citizen_report",
+          "caption": "Live sync proof photo",
+          "authenticity": {
+            "is_ai_generated": false,
+            "ai_probability": 0.02,
+            "real_probability": 0.98,
+            "confidence": 0.98,
+            "verdict": "real",
+            "engine": "microsoft/cvt-13"
+          },
+          "created_at": "2026-09-30T18:48:45.348Z"
+        }
+      ],
+      "ai_verification_status": "verified_real",
+      "timeline": [
+        {
+          "id": "t-1790794125348-1",
+          "issue_id": "issue-1790794125348",
+          "actor_id": "user-citizen-1",
+          "actor_name": "Dinesh Karthik",
+          "actor_role": "citizen",
+          "event_type": "SUBMITTED",
+          "new_status": "submitted",
+          "note": "Citizen registered civic issue with severity level: HIGH.",
+          "created_at": "2026-09-30T18:48:45.348Z"
+        },
+        {
+          "id": "t-1790794125348-2",
+          "issue_id": "issue-1790794125348",
+          "actor_name": "CivicLens Smart Routing Engine",
+          "actor_role": "system",
+          "event_type": "AUTO_ROUTED",
+          "old_status": "submitted",
+          "new_status": "assigned",
+          "note": "Auto-routed to Roads & Bridges Department (Category rule matched: Roads & Bridges Department). Target SLA: 5 days.",
+          "created_at": "2026-09-30T18:48:45.348Z"
+        }
+      ]
+    },
+    {
+      "id": "issue-1790794075883",
+      "complaint_code": "CL-2026-000123",
+      "citizen_id": "user-citizen-1",
+      "citizen_name": "Dinesh Karthik",
+      "citizen_phone": "+91 98401 23456",
+      "category_id": "cat-roads",
+      "category_name": "Roads & Potholes",
+      "category_code": "ROADS",
+      "title": "Real-Time Supabase Sync Pothole Confirmation",
+      "description": "Verifying that complaints reported on CivicLens reflect instantly in Supabase PostgreSQL.",
+      "severity": "high",
+      "status": "in_progress",
+      "latitude": 13.065,
+      "longitude": 80.255,
+      "location_text": "Live Sync Road, Ward 1",
+      "jurisdiction_id": "jur-ward-01",
+      "department_id": "dept-roads",
+      "department_name": "Roads & Bridges Department",
+      "is_overdue": false,
+      "sla_target_date": "2026-10-05T18:47:55.883Z",
+      "created_at": "2026-09-30T18:47:55.883Z",
+      "updated_at": "2026-09-30T18:49:19.436Z",
+      "evidence": [
+        {
+          "id": "ev-1790794075883",
+          "issue_id": "issue-1790794075883",
+          "uploaded_by": "user-citizen-1",
+          "uploader_name": "Dinesh Karthik",
+          "uploader_role": "citizen",
+          "file_path": "data:image/jpeg;base64,/9j/4AAQSkZJRg==",
+          "file_type": "image/jpeg",
+          "evidence_type": "citizen_report",
+          "caption": "Live sync proof photo",
+          "authenticity": {
+            "is_ai_generated": false,
+            "ai_probability": 0.02,
+            "real_probability": 0.98,
+            "confidence": 0.98,
+            "verdict": "real",
+            "engine": "microsoft/cvt-13"
+          },
+          "created_at": "2026-09-30T18:47:55.883Z"
+        }
+      ],
+      "ai_verification_status": "verified_real",
+      "timeline": [
+        {
+          "id": "t-1790794075883-1",
+          "issue_id": "issue-1790794075883",
+          "actor_id": "user-citizen-1",
+          "actor_name": "Dinesh Karthik",
+          "actor_role": "citizen",
+          "event_type": "SUBMITTED",
+          "new_status": "submitted",
+          "note": "Citizen registered civic issue with severity level: HIGH.",
+          "created_at": "2026-09-30T18:47:55.883Z"
+        },
+        {
+          "id": "t-1790794075883-2",
+          "issue_id": "issue-1790794075883",
+          "actor_name": "CivicLens Smart Routing Engine",
+          "actor_role": "system",
+          "event_type": "AUTO_ROUTED",
+          "old_status": "submitted",
+          "new_status": "assigned",
+          "note": "Auto-routed to Roads & Bridges Department (Category rule matched: Roads & Bridges Department). Target SLA: 5 days.",
+          "created_at": "2026-09-30T18:47:55.883Z"
+        },
+        {
+          "id": "t-1790794159436",
+          "issue_id": "issue-1790794075883",
+          "actor_name": "Department Officer",
+          "actor_role": "officer",
+          "event_type": "FIELD_WORKER_ASSIGNED",
+          "new_status": "in_progress",
+          "note": "Mobilizing asphalt patch crew to site.",
+          "created_at": "2026-09-30T18:49:19.436Z"
+        }
+      ],
+      "assigned_field_worker_id": "user-field-kumar",
+      "assigned_field_worker_name": "Kumaravel P. (Field Tech)"
+    },
+    {
       "id": "issue-1790791174176",
       "complaint_code": "CL-2026-000122",
       "citizen_id": "user-officer-roads",
@@ -1830,6 +2055,51 @@
   ],
   "notifications": [
     {
+      "user_id": "user-citizen-1",
+      "title": "Field Worker Dispatched: CL-2026-000123",
+      "message": "Field technician Kumaravel P. (Field Tech) has been assigned to work on your complaint.",
+      "related_issue_id": "issue-1790794075883",
+      "id": "notif-1790794159436-9uj3",
+      "is_read": false,
+      "created_at": "2026-09-30T18:49:19.436Z"
+    },
+    {
+      "user_id": "user-field-kumar",
+      "title": "New Field Assignment: CL-2026-000123",
+      "message": "You have been assigned to inspect and rectify \"Real-Time Supabase Sync Pothole Confirma...\" at Live Sync Road, Ward 1.",
+      "related_issue_id": "issue-1790794075883",
+      "id": "notif-1790794159436-cuqk",
+      "is_read": false,
+      "created_at": "2026-09-30T18:49:19.436Z"
+    },
+    {
+      "user_id": "user-citizen-1",
+      "title": "Complaint Submitted: CL-2026-000125",
+      "message": "Your report \"Real-Time Supabase Sync Pothole Confirma...\" has been received and routed to Roads & Bridges Department.",
+      "related_issue_id": "issue-1790794156198",
+      "id": "notif-1790794156198-pbrf",
+      "is_read": false,
+      "created_at": "2026-09-30T18:49:16.198Z"
+    },
+    {
+      "user_id": "user-citizen-1",
+      "title": "Complaint Submitted: CL-2026-000124",
+      "message": "Your report \"Real-Time Supabase Sync Pothole Confirma...\" has been received and routed to Roads & Bridges Department.",
+      "related_issue_id": "issue-1790794125348",
+      "id": "notif-1790794125348-b7z2",
+      "is_read": false,
+      "created_at": "2026-09-30T18:48:45.348Z"
+    },
+    {
+      "user_id": "user-citizen-1",
+      "title": "Complaint Submitted: CL-2026-000123",
+      "message": "Your report \"Real-Time Supabase Sync Pothole Confirma...\" has been received and routed to Roads & Bridges Department.",
+      "related_issue_id": "issue-1790794075883",
+      "id": "notif-1790794075883-gf9u",
+      "is_read": false,
+      "created_at": "2026-09-30T18:47:55.883Z"
+    },
+    {
       "user_id": "user-officer-roads",
       "title": "Complaint Submitted: CL-2026-000122",
       "message": "Your report \"rakesh road...\" has been received and routed to Roads & Bridges Department.",
@@ -1984,6 +2254,59 @@
     }
   ],
   "auditLogs": [
+    {
+      "action": "ASSIGN_FIELD_WORKER",
+      "entity_type": "ISSUE",
+      "entity_id": "issue-1790794075883",
+      "metadata": {
+        "field_worker_id": "user-field-kumar",
+        "worker_name": "Kumaravel P. (Field Tech)"
+      },
+      "id": "audit-1790794159436-yrqt",
+      "created_at": "2026-09-30T18:49:19.436Z"
+    },
+    {
+      "action": "CREATE_ISSUE",
+      "entity_type": "ISSUE",
+      "entity_id": "issue-1790794156198",
+      "actor_email": "citizen@civiclens.gov",
+      "actor_role": "citizen",
+      "metadata": {
+        "complaint_code": "CL-2026-000125",
+        "category": "Roads & Potholes",
+        "severity": "high"
+      },
+      "id": "audit-1790794156198-sjri",
+      "created_at": "2026-09-30T18:49:16.198Z"
+    },
+    {
+      "action": "CREATE_ISSUE",
+      "entity_type": "ISSUE",
+      "entity_id": "issue-1790794125348",
+      "actor_email": "citizen@civiclens.gov",
+      "actor_role": "citizen",
+      "metadata": {
+        "complaint_code": "CL-2026-000124",
+        "category": "Roads & Potholes",
+        "severity": "high"
+      },
+      "id": "audit-1790794125348-p8l2",
+      "created_at": "2026-09-30T18:48:45.348Z"
+    },
+    {
+      "action": "CREATE_ISSUE",
+      "entity_type": "ISSUE",
+      "entity_id": "issue-1790794075883",
+      "actor_email": "citizen@civiclens.gov",
+      "actor_role": "citizen",
+      "metadata": {
+        "complaint_code": "CL-2026-000123",
+        "category": "Roads & Potholes",
+        "severity": "high"
+      },
+      "id": "audit-1790794075883-kjk8",
+      "created_at": "2026-09-30T18:47:55.883Z"
+    },
     {
       "action": "REGISTER_USER",
       "entity_type": "USER",
