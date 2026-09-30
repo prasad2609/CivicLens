@@ -24,7 +24,7 @@ import {
   Building2,
   CheckCircle,
 } from 'lucide-react';
-import { civicStore } from '@/lib/store';
+import { civicStore, calculateDistanceMeters } from '@/lib/store';
 import { api } from '@/lib/api';
 import { CivicIssue, IssueSeverity, EvidenceAuthenticity } from '@/types';
 import { CivicMap } from '@/components/map/CivicMap';
@@ -149,7 +149,21 @@ export default function ReportIssuePage() {
     reader.readAsDataURL(file);
   };
 
-  // Helper to reverse geocode and auto-select ward
+  // Helper to find closest ward
+  const findClosestWard = (lat: number, lng: number) => {
+    let closest = jurisdictions[0];
+    let minD = Infinity;
+    for (const w of jurisdictions) {
+      const d = calculateDistanceMeters(lat, lng, w.center_lat, w.center_lng);
+      if (d < minD) {
+        minD = d;
+        closest = w;
+      }
+    }
+    return closest;
+  };
+
+  // Helper to reverse geocode and sync ward
   const reverseGeocodeAndSync = async (lat: number, lng: number, fallbackLabel?: string) => {
     setIsReverseGeocoding(true);
     try {
@@ -170,105 +184,150 @@ export default function ReportIssuePage() {
 
     if (fallbackLabel) {
       setLocationText(fallbackLabel);
-    } else {
-      setLocationText(`Lat: ${lat.toFixed(5)}, Lng: ${lng.toFixed(5)}`);
     }
     return null;
   };
 
-  // Robust Geolocation with Multi-Level Fallback (GPS -> Low-Acc GPS -> IP Geolocation -> Ward Center)
+  // Robust Geolocation: Instantly Auto-detects & Auto-enters location
   const handleDetectLocation = async () => {
     setLocatingUser(true);
     setLocationStatusType('info');
-    setLocationStatusMsg('Requesting browser GPS position...');
+    setLocationStatusMsg('Acquiring your location...');
+    // Immediately show progress in the input field so the user sees instant feedback!
+    setLocationText('📍 Detecting exact location...');
 
-    const applyPos = async (lat: number, lng: number, isAccurateGps: boolean, cityNote?: string) => {
+    // Function to apply coordinates immediately and auto-enter location
+    const applyCoordinatesImmediately = async (
+      lat: number,
+      lng: number,
+      source: 'gps' | 'network'
+    ) => {
       setCoords([lat, lng]);
-      setLocationStatusMsg('Coordinates acquired! Fetching street address...');
-      const data = await reverseGeocodeAndSync(lat, lng);
 
-      if (isAccurateGps) {
-        setLocationStatusType('success');
-        setLocationStatusMsg(
-          data?.nearestWard?.name
-            ? `✓ GPS verified! Location identified in ${data.nearestWard.name}`
-            : '✓ GPS coordinates acquired and street address mapped.'
-        );
-      } else {
-        setLocationStatusType('warning');
-        setLocationStatusMsg(
-          `⚠️ Network-based approximate location (${cityNote || 'Chennai'}). Drag pin or search below if needed.`
-        );
+      // 1. Instantly calculate nearest ward and auto-select in dropdown
+      const closestWard = findClosestWard(lat, lng);
+      if (closestWard) {
+        setSelectedJurisdictionId(closestWard.id);
       }
-      setLocatingUser(false);
+
+      // 2. Instantly auto-enter a recognizable location into the input field!
+      const initialLocationString = `${closestWard?.name || 'Chennai South'}, Chennai (${lat.toFixed(5)}, ${lng.toFixed(5)})`;
+      setLocationText(initialLocationString);
+
+      setLocationStatusType(source === 'gps' ? 'success' : 'info');
+      setLocationStatusMsg(
+        source === 'gps'
+          ? `✓ GPS located in ${closestWard?.name || 'Chennai'}. Resolving street name...`
+          : `✓ Location detected in ${closestWard?.name || 'Chennai'}. Resolving street name...`
+      );
+
+      // 3. Enrich in the background with real street / building from OpenStreetMap
+      setIsReverseGeocoding(true);
+      try {
+        const res = await fetch(`/api/geocode?action=reverse&lat=${lat}&lng=${lng}`);
+        const data = await res.json();
+        if (data.success && data.address) {
+          // Auto-enter the detailed street address!
+          setLocationText(data.address);
+          if (data.nearestWard?.id) {
+            setSelectedJurisdictionId(data.nearestWard.id);
+          }
+          setLocationStatusType('success');
+          setLocationStatusMsg(`✓ Exact location auto-entered: ${data.nearestWard?.name || closestWard?.name}`);
+        }
+      } catch (err) {
+        console.warn('Reverse geocode error:', err);
+      } finally {
+        setIsReverseGeocoding(false);
+        setLocatingUser(false);
+      }
     };
 
-    const fallbackToIp = async (reasonNote: string) => {
-      setLocationStatusMsg(`${reasonNote} Trying network IP location...`);
+    // Helper for fast IP/Network location fallback
+    const fetchNetworkFallback = async () => {
       try {
         const ipRes = await fetch('/api/geocode?action=ip');
         const ipData = await ipRes.json();
         if (ipData.success && typeof ipData.lat === 'number' && typeof ipData.lng === 'number') {
-          await applyPos(ipData.lat, ipData.lng, false, ipData.city);
-          return;
+          return { lat: ipData.lat, lng: ipData.lng, city: ipData.city };
         }
       } catch (e) {
-        console.warn('IP fallback failed:', e);
+        console.warn('Network location fallback failed:', e);
       }
-
-      // Final fallback to currently selected ward
-      const curWard = jurisdictions.find((j) => j.id === selectedJurisdictionId) || jurisdictions[0];
-      setCoords([curWard.center_lat, curWard.center_lng]);
-      setLocationText(`${curWard.name}, Chennai`);
-      setLocationStatusType('warning');
-      setLocationStatusMsg(`Could not get GPS. Centered on ${curWard.name}. Click map to position pin.`);
-      setLocatingUser(false);
+      return null;
     };
 
-    if (typeof window === 'undefined' || !navigator.geolocation) {
-      await fallbackToIp('Browser GPS not supported.');
-      return;
-    }
+    // Try browser GPS first with a 3.5-second timeout
+    if (typeof window !== 'undefined' && navigator.geolocation) {
+      let resolved = false;
 
-    // Try high-accuracy GPS with 6-second timeout
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        const lat = Number(pos.coords.latitude.toFixed(6));
-        const lng = Number(pos.coords.longitude.toFixed(6));
-        await applyPos(lat, lng, true);
-      },
-      async (err) => {
-        console.warn('High accuracy GPS error:', err.message, 'code:', err.code);
-
-        // If error is timeout (code 3) or position unavailable (code 2), try low accuracy
-        if (err.code === 2 || err.code === 3) {
-          navigator.geolocation.getCurrentPosition(
-            async (pos) => {
-              const lat = Number(pos.coords.latitude.toFixed(6));
-              const lng = Number(pos.coords.longitude.toFixed(6));
-              await applyPos(lat, lng, true);
-            },
-            async () => {
-              // Try IP Geolocation
-              await fallbackToIp('Device GPS unavailable.');
-            },
-            { enableHighAccuracy: false, timeout: 4000, maximumAge: 60000 }
-          );
-        } else {
-          // Permission denied (code 1)
-          await fallbackToIp('GPS permission was denied.');
+      const timer = setTimeout(async () => {
+        if (!resolved) {
+          resolved = true;
+          setLocationStatusMsg('GPS taking time, using network location...');
+          const netLoc = await fetchNetworkFallback();
+          if (netLoc) {
+            await applyCoordinatesImmediately(netLoc.lat, netLoc.lng, 'network');
+          } else {
+            const ward = jurisdictions.find((j) => j.id === selectedJurisdictionId) || jurisdictions[0];
+            await applyCoordinatesImmediately(ward.center_lat, ward.center_lng, 'network');
+          }
         }
-      },
-      { enableHighAccuracy: true, timeout: 6000, maximumAge: 30000 }
-    );
+      }, 3500);
+
+      navigator.geolocation.getCurrentPosition(
+        async (pos) => {
+          if (!resolved) {
+            resolved = true;
+            clearTimeout(timer);
+            const lat = Number(pos.coords.latitude.toFixed(6));
+            const lng = Number(pos.coords.longitude.toFixed(6));
+            await applyCoordinatesImmediately(lat, lng, 'gps');
+          }
+        },
+        async (err) => {
+          if (!resolved) {
+            resolved = true;
+            clearTimeout(timer);
+            console.warn('Browser GPS error:', err.message);
+            const netLoc = await fetchNetworkFallback();
+            if (netLoc) {
+              await applyCoordinatesImmediately(netLoc.lat, netLoc.lng, 'network');
+            } else {
+              const ward = jurisdictions.find((j) => j.id === selectedJurisdictionId) || jurisdictions[0];
+              await applyCoordinatesImmediately(ward.center_lat, ward.center_lng, 'network');
+            }
+          }
+        },
+        { enableHighAccuracy: true, timeout: 3500, maximumAge: 30000 }
+      );
+    } else {
+      const netLoc = await fetchNetworkFallback();
+      if (netLoc) {
+        await applyCoordinatesImmediately(netLoc.lat, netLoc.lng, 'network');
+      } else {
+        const ward = jurisdictions.find((j) => j.id === selectedJurisdictionId) || jurisdictions[0];
+        await applyCoordinatesImmediately(ward.center_lat, ward.center_lng, 'network');
+      }
+    }
   };
 
   // Handle map click or pin drag
   const handleMapLocationPick = async (lat: number, lng: number) => {
     setCoords([lat, lng]);
+    const closestWard = findClosestWard(lat, lng);
+    if (closestWard) {
+      setSelectedJurisdictionId(closestWard.id);
+    }
+    // Auto-enter immediately
+    setLocationText(`${closestWard?.name || 'Chennai South'}, Chennai (${lat.toFixed(5)}, ${lng.toFixed(5)})`);
     setLocationStatusType('info');
     setLocationStatusMsg('Selected map location. Updating street address...');
+
     const data = await reverseGeocodeAndSync(lat, lng);
+    if (data?.address) {
+      setLocationText(data.address);
+    }
     setLocationStatusType('success');
     setLocationStatusMsg(
       data?.nearestWard?.name
@@ -319,7 +378,10 @@ export default function ReportIssuePage() {
     setLocationText(`${landmark.name}, Chennai`);
     setLocationStatusType('success');
     setLocationStatusMsg(`📍 Selected landmark: ${landmark.name}`);
-    await reverseGeocodeAndSync(landmark.lat, landmark.lng, `${landmark.name}, Chennai`);
+    const data = await reverseGeocodeAndSync(landmark.lat, landmark.lng, `${landmark.name}, Chennai`);
+    if (data?.address) {
+      setLocationText(data.address);
+    }
   };
 
   // Submission
@@ -810,10 +872,10 @@ export default function ReportIssuePage() {
                   type="button"
                   onClick={handleDetectLocation}
                   disabled={locatingUser}
-                  className="inline-flex items-center gap-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 px-4 py-2 rounded-lg shadow-sm transition transform active:scale-95"
+                  className="inline-flex items-center gap-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 px-4 py-2.5 rounded-lg shadow-sm transition transform active:scale-95 cursor-pointer"
                 >
                   <Compass className={`w-4 h-4 ${locatingUser ? 'animate-spin' : ''}`} />
-                  {locatingUser ? 'Detecting Location...' : 'Detect My GPS Location'}
+                  {locatingUser ? 'Detecting Exact Location...' : 'Use Current GPS'}
                 </button>
               </div>
 
@@ -1004,22 +1066,45 @@ export default function ReportIssuePage() {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center justify-between">
-                  <span>Street / Landmark Description *</span>
-                  {isReverseGeocoding ? (
-                    <span className="text-[10px] text-blue-600 animate-pulse">Reverse geocoding...</span>
-                  ) : (
-                    <span className="text-[10px] text-emerald-600 font-normal">✓ Reverse geocoded</span>
-                  )}
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={locationText}
-                  onChange={(e) => setLocationText(e.target.value)}
-                  placeholder="E.g., Velachery Main Road, Near Vijayanagar bus depot"
-                  className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                />
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
+                    <span>Street / Landmark Description *</span>
+                    {isReverseGeocoding ? (
+                      <span className="text-[10px] text-blue-600 animate-pulse font-normal">(Resolving address...)</span>
+                    ) : locationText ? (
+                      <span className="text-[10px] text-emerald-600 font-normal">✓ Location set</span>
+                    ) : null}
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleDetectLocation}
+                    disabled={locatingUser}
+                    className="text-[11px] text-blue-600 hover:text-blue-800 font-bold inline-flex items-center gap-1 hover:underline cursor-pointer"
+                  >
+                    <Compass className={`w-3.5 h-3.5 ${locatingUser ? 'animate-spin text-blue-600' : ''}`} />
+                    <span>{locatingUser ? 'Detecting...' : 'Auto-detect Location'}</span>
+                  </button>
+                </div>
+                <div className="relative">
+                  <input
+                    type="text"
+                    required
+                    value={locationText}
+                    onChange={(e) => setLocationText(e.target.value)}
+                    placeholder="Click 'Use Current GPS' to auto-detect or type your street..."
+                    className="w-full text-xs p-2.5 pr-28 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none shadow-xs"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleDetectLocation}
+                    disabled={locatingUser}
+                    className="absolute right-1 top-1 bottom-1 px-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-md text-[11px] font-bold shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+                    title="Detect GPS & auto-enter location"
+                  >
+                    <Compass className={`w-3.5 h-3.5 ${locatingUser ? 'animate-spin' : ''}`} />
+                    <span>{locatingUser ? 'Detecting...' : 'Use GPS'}</span>
+                  </button>
+                </div>
               </div>
             </div>
 
