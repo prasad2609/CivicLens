@@ -381,6 +381,12 @@ class ServerDatabase {
     },
     citizen: UserProfile
   ): CivicIssue {
+    if (data.authenticity?.is_ai_generated) {
+      throw new Error(
+        'Complaint rejected: The attached photograph was detected as AI-generated/synthetic. Only authentic camera photos can be submitted.'
+      );
+    }
+
     const s = this.load();
     const nextSeq = s.issues.length + 101;
     const complaintCode = `CL-2026-${String(nextSeq).padStart(6, '0')}`;

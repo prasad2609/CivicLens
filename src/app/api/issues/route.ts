@@ -52,6 +52,20 @@ export async function POST(req: NextRequest) {
     const authenticity = body.authenticity;
     const citizenId = body.citizenId || body.citizen_id;
 
+    // Hard Municipal Enforcement: Strict Rejection of AI-Generated/Synthetic Evidence
+    if (authenticity?.is_ai_generated) {
+      return NextResponse.json(
+        {
+          error:
+            'Evidence Rejected: AI-generated or synthetic photograph detected. Civic complaints require authentic ground camera captures to prevent fabricated reports.',
+          rejected: true,
+          reason: 'AI_SYNTHETIC_EVIDENCE_REJECTED',
+          details: authenticity.details || 'Synthetic diffusion patterns detected.',
+        },
+        { status: 422 }
+      );
+    }
+
     if (!title || !description || !categoryId || !jurisdictionId) {
       return NextResponse.json(
         { error: 'Title, description, category, and location are required.' },
