@@ -192,7 +192,7 @@ export default function ReportIssuePage() {
   const handleDetectLocation = async () => {
     setLocatingUser(true);
     setLocationStatusType('info');
-    setLocationStatusMsg('Acquiring your location...');
+    setLocationStatusMsg('Acquiring your exact GPS location...');
     // Immediately show progress in the input field so the user sees instant feedback!
     setLocationText('📍 Detecting exact location...');
 
@@ -200,7 +200,7 @@ export default function ReportIssuePage() {
     const applyCoordinatesImmediately = async (
       lat: number,
       lng: number,
-      source: 'gps' | 'network'
+      sourceTitle: string
     ) => {
       setCoords([lat, lng]);
 
@@ -214,12 +214,8 @@ export default function ReportIssuePage() {
       const initialLocationString = `${closestWard?.name || 'Chennai South'}, Chennai (${lat.toFixed(5)}, ${lng.toFixed(5)})`;
       setLocationText(initialLocationString);
 
-      setLocationStatusType(source === 'gps' ? 'success' : 'info');
-      setLocationStatusMsg(
-        source === 'gps'
-          ? `✓ GPS located in ${closestWard?.name || 'Chennai'}. Resolving street name...`
-          : `✓ Location detected in ${closestWard?.name || 'Chennai'}. Resolving street name...`
-      );
+      setLocationStatusType('success');
+      setLocationStatusMsg(`✓ ${sourceTitle}. Resolving street address...`);
 
       // 3. Enrich in the background with real street / building from OpenStreetMap
       setIsReverseGeocoding(true);
@@ -233,7 +229,7 @@ export default function ReportIssuePage() {
             setSelectedJurisdictionId(data.nearestWard.id);
           }
           setLocationStatusType('success');
-          setLocationStatusMsg(`✓ Exact location auto-entered: ${data.nearestWard?.name || closestWard?.name}`);
+          setLocationStatusMsg(`✓ Exact location auto-entered: ${data.address}`);
         }
       } catch (err) {
         console.warn('Reverse geocode error:', err);
@@ -243,73 +239,58 @@ export default function ReportIssuePage() {
       }
     };
 
-    // Helper for fast IP/Network location fallback
-    const fetchNetworkFallback = async () => {
-      try {
-        const ipRes = await fetch('/api/geocode?action=ip');
-        const ipData = await ipRes.json();
-        if (ipData.success && typeof ipData.lat === 'number' && typeof ipData.lng === 'number') {
-          return { lat: ipData.lat, lng: ipData.lng, city: ipData.city };
-        }
-      } catch (e) {
-        console.warn('Network location fallback failed:', e);
-      }
-      return null;
-    };
+    let resolved = false;
 
-    // Try browser GPS first with a 3.5-second timeout
+    // 1. Try Browser Geolocation in parallel
     if (typeof window !== 'undefined' && navigator.geolocation) {
-      let resolved = false;
-
-      const timer = setTimeout(async () => {
-        if (!resolved) {
-          resolved = true;
-          setLocationStatusMsg('GPS taking time, using network location...');
-          const netLoc = await fetchNetworkFallback();
-          if (netLoc) {
-            await applyCoordinatesImmediately(netLoc.lat, netLoc.lng, 'network');
-          } else {
-            const ward = jurisdictions.find((j) => j.id === selectedJurisdictionId) || jurisdictions[0];
-            await applyCoordinatesImmediately(ward.center_lat, ward.center_lng, 'network');
-          }
-        }
-      }, 3500);
-
       navigator.geolocation.getCurrentPosition(
         async (pos) => {
           if (!resolved) {
             resolved = true;
-            clearTimeout(timer);
             const lat = Number(pos.coords.latitude.toFixed(6));
             const lng = Number(pos.coords.longitude.toFixed(6));
-            await applyCoordinatesImmediately(lat, lng, 'gps');
+            await applyCoordinatesImmediately(lat, lng, 'Browser GPS location locked');
           }
         },
-        async (err) => {
-          if (!resolved) {
-            resolved = true;
-            clearTimeout(timer);
-            console.warn('Browser GPS error:', err.message);
-            const netLoc = await fetchNetworkFallback();
-            if (netLoc) {
-              await applyCoordinatesImmediately(netLoc.lat, netLoc.lng, 'network');
-            } else {
-              const ward = jurisdictions.find((j) => j.id === selectedJurisdictionId) || jurisdictions[0];
-              await applyCoordinatesImmediately(ward.center_lat, ward.center_lng, 'network');
-            }
-          }
+        (err) => {
+          console.warn('Browser GPS notice:', err.message);
         },
-        { enableHighAccuracy: true, timeout: 3500, maximumAge: 30000 }
+        { enableHighAccuracy: true, timeout: 3000, maximumAge: 30000 }
       );
-    } else {
-      const netLoc = await fetchNetworkFallback();
-      if (netLoc) {
-        await applyCoordinatesImmediately(netLoc.lat, netLoc.lng, 'network');
-      } else {
-        const ward = jurisdictions.find((j) => j.id === selectedJurisdictionId) || jurisdictions[0];
-        await applyCoordinatesImmediately(ward.center_lat, ward.center_lng, 'network');
-      }
     }
+
+    // 2. Query device hardware GPS from backend (resolves in 10-50ms)
+    try {
+      const devRes = await fetch('/api/geocode?action=device');
+      const devData = await devRes.json();
+      if (devData.success && typeof devData.lat === 'number') {
+        if (!resolved) {
+          resolved = true;
+          await applyCoordinatesImmediately(devData.lat, devData.lng, 'Hardware GPS location acquired');
+          return;
+        }
+      }
+    } catch (e) {
+      console.warn('Device geocode query error:', e);
+    }
+
+    // 3. Network IP fallback if neither resolved within 3 seconds
+    setTimeout(async () => {
+      if (!resolved) {
+        resolved = true;
+        try {
+          const ipRes = await fetch('/api/geocode?action=ip');
+          const ipData = await ipRes.json();
+          if (ipData.success && typeof ipData.lat === 'number') {
+            await applyCoordinatesImmediately(ipData.lat, ipData.lng, 'Network location acquired');
+            return;
+          }
+        } catch {}
+
+        const ward = jurisdictions.find((j) => j.id === selectedJurisdictionId) || jurisdictions[0];
+        await applyCoordinatesImmediately(ward.center_lat, ward.center_lng, `Set to ${ward.name}`);
+      }
+    }, 3000);
   };
 
   // Handle map click or pin drag

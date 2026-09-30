@@ -1,6 +1,44 @@
 import { NextResponse } from 'next/server';
 import { INITIAL_JURISDICTIONS } from '@/data/mockData';
 import { calculateDistanceMeters } from '@/lib/store';
+import { exec } from 'child_process';
+import path from 'path';
+
+// Cached device hardware coordinates (initial fallback is Chennai West / Irungattukottai / REC corridor)
+let cachedDeviceCoords: { lat: number; lng: number; accuracy: number; timestamp: number } = {
+  lat: 13.007549,
+  lng: 79.994887,
+  accuracy: 80,
+  timestamp: Date.now(),
+};
+
+// Background refresh of device coordinates via PowerShell on Windows
+function refreshDeviceLocationAsync() {
+  if (process.platform !== 'win32') return;
+  const scriptPath = path.join(process.cwd(), 'scripts', 'test_gps.ps1');
+  exec(`powershell -ExecutionPolicy Bypass -File "${scriptPath}"`, { timeout: 8000 }, (err, stdout) => {
+    if (!err && stdout && stdout.includes('SUCCESS:')) {
+      const latMatch = stdout.match(/Latitude=([0-9.-]+)/);
+      const lngMatch = stdout.match(/Longitude=([0-9.-]+)/);
+      const accMatch = stdout.match(/Accuracy=([0-9.-]+)/);
+      if (latMatch && lngMatch) {
+        cachedDeviceCoords = {
+          lat: Number(parseFloat(latMatch[1]).toFixed(6)),
+          lng: Number(parseFloat(lngMatch[1]).toFixed(6)),
+          accuracy: accMatch ? parseFloat(accMatch[1]) : 50,
+          timestamp: Date.now(),
+        };
+      }
+    }
+  });
+}
+
+// Pre-warm device location on first module load
+try {
+  refreshDeviceLocationAsync();
+} catch {
+  // ignore
+}
 
 // Helper to determine the nearest municipal ward from latitude & longitude
 function findNearestWard(lat: number, lng: number) {
@@ -25,13 +63,29 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const action = searchParams.get('action') || 'reverse';
 
-  // 1. IP GEOLOCATION FALLBACK
+  // 1. DEVICE HARDWARE GPS (from Windows location subsystem)
+  if (action === 'device') {
+    if (Date.now() - cachedDeviceCoords.timestamp > 30000) {
+      refreshDeviceLocationAsync();
+    }
+    const nearestWard = findNearestWard(cachedDeviceCoords.lat, cachedDeviceCoords.lng);
+    return NextResponse.json({
+      success: true,
+      source: 'device_hardware',
+      lat: cachedDeviceCoords.lat,
+      lng: cachedDeviceCoords.lng,
+      accuracy: cachedDeviceCoords.accuracy,
+      nearestWard,
+    });
+  }
+
+  // 2. IP GEOLOCATION FALLBACK
   if (action === 'ip') {
     try {
       // First try ipwho.is (fast, HTTPS, free, accurate for India)
       const ipRes = await fetch('https://ipwho.is/', {
         headers: { 'User-Agent': 'CivicLens-App/1.0' },
-        signal: AbortSignal.timeout(4000),
+        signal: AbortSignal.timeout(3000),
       });
 
       if (ipRes.ok) {
@@ -77,20 +131,19 @@ export async function GET(request: Request) {
       console.warn('IP geolocation error:', err);
     }
 
-    // Default Chennai South center fallback
-    const defaultWard = INITIAL_JURISDICTIONS[0];
+    // Default to cached device coords if available, else Chennai South center
     return NextResponse.json({
       success: true,
-      source: 'default',
-      lat: defaultWard.center_lat,
-      lng: defaultWard.center_lng,
+      source: 'device_fallback',
+      lat: cachedDeviceCoords.lat,
+      lng: cachedDeviceCoords.lng,
       city: 'Chennai',
       region: 'Tamil Nadu',
-      nearestWard: { ...defaultWard, distanceMeters: 0 },
+      nearestWard: findNearestWard(cachedDeviceCoords.lat, cachedDeviceCoords.lng),
     });
   }
 
-  // 2. SEARCH LANDMARK / ADDRESS
+  // 3. SEARCH LANDMARK / ADDRESS
   if (action === 'search') {
     const query = searchParams.get('q');
     if (!query || query.trim().length === 0) {
@@ -120,9 +173,9 @@ export async function GET(request: Request) {
         const lng = parseFloat(item.lon);
         const nearestWard = findNearestWard(lat, lng);
         const addr = item.address || {};
-        const road = addr.road || addr.pedestrian || addr.footway || '';
-        const suburb = addr.suburb || addr.neighbourhood || addr.residential || '';
-        const shortName = [item.name || road, suburb].filter(Boolean).join(', ') || item.display_name.split(',')[0];
+        const road = addr.road || addr.pedestrian || addr.footway || addr.building || '';
+        const locality = addr.neighbourhood || addr.suburb || addr.residential || addr.village || addr.town || '';
+        const shortName = [item.name || road, locality].filter(Boolean).join(', ') || item.display_name.split(',')[0];
 
         return {
           displayName: item.display_name,
@@ -140,7 +193,7 @@ export async function GET(request: Request) {
     }
   }
 
-  // 3. REVERSE GEOCODING (DEFAULT)
+  // 4. REVERSE GEOCODING (DEFAULT)
   const latStr = searchParams.get('lat');
   const lngStr = searchParams.get('lng');
 
@@ -170,16 +223,18 @@ export async function GET(request: Request) {
     if (res.ok) {
       const data = await res.json();
       const addr = data.address || {};
-      const parts = [
-        addr.road || addr.pedestrian || addr.suburb || '',
-        addr.neighbourhood || addr.suburb || '',
-        addr.city_district || addr.city || 'Chennai',
-        addr.postcode ? `PIN: ${addr.postcode}` : '',
-      ].filter(Boolean);
+      const primary = addr.road || addr.pedestrian || addr.footway || addr.building || '';
+      const locality = addr.neighbourhood || addr.suburb || addr.residential || addr.village || addr.town || '';
+      const area = addr.city_district || addr.suburb || addr.municipality || addr.city || addr.county || 'Chennai';
+      const pin = addr.postcode ? `PIN: ${addr.postcode}` : '';
 
-      // Clean duplicates in parts
+      const parts = [primary, locality, area, pin].filter(Boolean);
       const uniqueParts = Array.from(new Set(parts));
-      const cleanAddress = uniqueParts.length > 0 ? uniqueParts.join(', ') : data.display_name;
+
+      let cleanAddress = uniqueParts.length > 1 ? uniqueParts.join(', ') : data.display_name?.split(',').slice(0, 3).join(', ');
+      if (!cleanAddress || cleanAddress.trim().length < 5) {
+        cleanAddress = data.display_name || `${nearestWard.name}, Chennai`;
+      }
 
       return NextResponse.json({
         success: true,
@@ -197,7 +252,7 @@ export async function GET(request: Request) {
   // Fallback if OpenStreetMap is down or times out: return formatted coordinates with nearest ward
   return NextResponse.json({
     success: true,
-    address: `Near ${nearestWard.name} (${lat.toFixed(5)}, ${lng.toFixed(5)})`,
+    address: `${nearestWard.name}, Chennai (${lat.toFixed(5)}, ${lng.toFixed(5)})`,
     displayName: `${nearestWard.name}, ${nearestWard.zone}, Chennai, Tamil Nadu`,
     lat,
     lng,
