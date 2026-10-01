@@ -30,6 +30,14 @@ except ImportError as e:
     HAS_SCIENTIFIC_STACK = False
     print(f"[Warning] Scientific libraries not fully available: {e}")
 
+# Initialize Dual-Stream Forensic CNN Detector
+try:
+    from cnn_detector import CNNAIImageDetector
+    CNN_DETECTOR = CNNAIImageDetector()
+except Exception as e:
+    CNN_DETECTOR = None
+    print(f"[Warning] Could not initialize CNNAIImageDetector: {e}")
+
 GENERATIVE_AI_KEYWORDS = [
     "stable diffusion", "midjourney", "dall-e", "dalle", "novelai",
     "comfyui", "firefly", "synthetic", "ai generated", "ai-generated",
@@ -235,17 +243,19 @@ class DeepForensicsHTTPHandler(BaseHTTPRequestHandler):
         if self.path in ["/health", "/"]:
             self._send_response(200, {
                 "status": "online",
-                "service": "CivicLens DeepForensics v2",
-                "engine": "multi-spectral-optical-forensics",
-                "version": "2.0.0",
+                "service": "CivicLens DeepForensics CNN Engine",
+                "engine": "Dual-Stream-Forensic-CNN",
+                "architecture": "Convolutional Neural Network (Bayar-Stamm High-Pass ConvNet + ResNet-18)",
+                "version": "2.5.0",
                 "accuracy": "high-precision",
+                "cnn_active": CNN_DETECTOR is not None,
                 "features": [
-                    "CMOS sensor shot noise residual (PRNU)",
-                    "Micro-texture gradient sharpness",
-                    "Bayer CFA channel covariance",
-                    "2D FFT frequency spectrum roll-off",
-                    "Error Level Analysis (ELA)",
-                    "EXIF & generative prompt metadata"
+                    "Bayar-Stamm Constrained High-Pass Residual CNN",
+                    "ResNet-18 Deep Convolutional Feature Backbone",
+                    "SRM (Spatial Rich Model) 5-Kernel Forensic Convolutions",
+                    "Bayer CFA Inter-Channel Convolutional Covariance",
+                    "2D FFT Frequency Spectrum Roll-Off",
+                    "Generative AI Prompt & Metadata Signature Scan"
                 ]
             })
         else:
@@ -285,7 +295,11 @@ class DeepForensicsHTTPHandler(BaseHTTPRequestHandler):
                         clean_b64 += "=" * (4 - missing_padding)
                     raw_bytes = base64.b64decode(clean_b64)
 
-                result = analyze_deep_forensics(raw_bytes, caption)
+                if CNN_DETECTOR is not None:
+                    result = CNN_DETECTOR.predict(raw_bytes, caption)
+                else:
+                    result = analyze_deep_forensics(raw_bytes, caption)
+
                 self._send_response(200, {"success": True, "detection": result})
 
             except Exception as e:
