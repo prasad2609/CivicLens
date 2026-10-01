@@ -89,6 +89,8 @@ export interface EvidenceAuthenticity {
   engine: string;
   model?: string;
   details?: string;
+  reasons?: string[];
+  metrics?: Record<string, any>;
   analyzed_at: string;
 }
 

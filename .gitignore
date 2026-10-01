@@ -44,3 +44,7 @@ venv/
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Large Model weights
+*.onnx
+models/
