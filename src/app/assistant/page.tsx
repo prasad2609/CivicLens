@@ -17,6 +17,9 @@ import {
   HelpCircle,
   PhoneCall,
   FileText,
+  Scale,
+  AlertTriangle,
+  Trash2,
 } from 'lucide-react';
 import { civicStore } from '@/lib/store';
 
@@ -26,7 +29,7 @@ interface Message {
   text: string;
   time: string;
   actions?: Array<{ label: string; href: string }>;
-  source?: 'gemini-llm' | 'live-ledger-engine';
+  source?: 'gemini-llm' | 'groq-llm' | 'openai-llm' | 'live-ledger-engine';
 }
 
 const CATEGORIZED_PROMPTS = [
@@ -36,39 +39,49 @@ const CATEGORIZED_PROMPTS = [
     query: 'What is the status of complaint CL-2026-000101?',
   },
   {
-    category: 'Ward Intel',
-    icon: MapPin,
-    query: 'Tell me about Ward 175 Velachery',
+    category: 'Pothole Compensation',
+    icon: Scale,
+    query: 'Can I get compensation for vehicle damage caused by a pothole?',
   },
   {
-    category: 'Departments',
+    category: 'Ward Intel',
+    icon: MapPin,
+    query: 'Tell me about Ward 175 Velachery councillors and projects',
+  },
+  {
+    category: 'Drinking Water & Sewage',
     icon: Building2,
-    query: 'Who is responsible for sewage and water leaks?',
+    query: 'Sewage is mixing with drinking water, what is the emergency protocol?',
   },
   {
     category: 'SLA & Escalation',
     icon: Clock,
-    query: 'What is the SLA for streetlights and road potholes?',
+    query: 'What is the SLA for streetlights and how does escalation work?',
   },
   {
-    category: 'AI Detector',
+    category: 'AI Image & Camera',
     icon: ShieldCheck,
-    query: 'How does the AI image detector reject fake photos?',
+    query: 'How does the Dual-Stream CNN verify camera sensor noise?',
   },
   {
-    category: 'Emergency',
+    category: 'Garbage & SWM Fines',
+    icon: Trash2,
+    query: 'What are the fines for dumping garbage under SWM Rules 2016?',
+  },
+  {
+    category: 'Emergency Helplines',
     icon: PhoneCall,
-    query: 'Emergency helpline numbers for Chennai',
+    query: 'Emergency 24x7 helpline numbers for Chennai GCC & Metrowater',
   },
   {
-    category: 'Municipal Services',
+    category: '5% Tax Rebate',
     icon: HelpCircle,
-    query: 'How do I pay GCC property tax online?',
+    query: 'How do I get the 5% property tax rebate from GCC?',
   },
   {
-    category: 'Tamil Guidance',
+    category: 'தமிழ்ப் புகார்',
     icon: Sparkles,
-    query: 'சாலை பள்ளங்களை எப்படி புகார் செய்வது?',
+    query: 'சாலை பள்ள விபத்துக்கு இழப்பீடு பெறுவது எப்படி?',
   },
 ];
 
@@ -394,7 +407,13 @@ export default function AssistantPage() {
                     <div className="flex items-center justify-between pt-1 border-t border-slate-100/50 text-[10px]">
                       {!isUser && (
                         <span className="text-[10px] text-slate-400 font-mono">
-                          {m.source === 'gemini-llm' ? '✨ Gemini LLM' : '🏛️ CivicLedger Engine'}
+                          {m.source === 'gemini-llm'
+                            ? '✨ Gemini 2.0 AI'
+                            : m.source === 'groq-llm'
+                            ? '⚡ Groq Llama-3 AI'
+                            : m.source === 'openai-llm'
+                            ? '🧠 OpenAI GPT-4o'
+                            : '🏛️ CivicLedger Intelligence Engine'}
                         </span>
                       )}
                       <div className="flex items-center gap-2 ml-auto">
