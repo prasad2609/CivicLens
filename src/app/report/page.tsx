@@ -283,25 +283,6 @@ export default function ReportIssuePage() {
     stopLiveCamera();
   };
 
-  // Hardware device camera capture handler (for mobile devices where capture="environment" invokes native camera directly)
-  const handleNativeCameraCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (file.size > 8 * 1024 * 1024) {
-      alert('Photo file size exceeds 8MB. Please capture a standard photo.');
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      setPhotoDataUrl(event.target?.result as string);
-      const now = new Date();
-      setCapturedTimestamp(`${now.toLocaleDateString()} ${now.toLocaleTimeString()}`);
-      stopLiveCamera();
-    };
-    reader.readAsDataURL(file);
-  };
 
   // Helper to find closest ward
   const findClosestWard = (lat: number, lng: number) => {
@@ -1103,29 +1084,16 @@ export default function ReportIssuePage() {
                   </div>
                 )}
 
-                <div className="flex flex-col sm:flex-row items-center gap-3 pt-2">
+                <div className="pt-2">
                   <button
                     type="button"
                     onClick={() => startLiveCamera('environment')}
                     disabled={isCameraStarting}
-                    className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold shadow-md hover:shadow-lg transition transform active:scale-95 cursor-pointer disabled:opacity-50"
+                    className="inline-flex items-center gap-2 px-7 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold shadow-md hover:shadow-lg transition transform active:scale-95 cursor-pointer disabled:opacity-50"
                   >
                     <Camera className="w-5 h-5" />
                     {isCameraStarting ? 'Starting Optical Sensor...' : '📸 Open Live Camera'}
                   </button>
-
-                  {/* Direct Native Camera Shutter input for mobile devices */}
-                  <label className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-white hover:bg-slate-50 text-slate-700 text-sm font-semibold border border-slate-300 shadow-xs transition cursor-pointer">
-                    <RefreshCw className="w-4 h-4 text-slate-500" />
-                    <span>Use Device Camera Shutter</span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      capture="environment"
-                      onChange={handleNativeCameraCapture}
-                      className="hidden"
-                    />
-                  </label>
                 </div>
 
                 <div className="flex flex-wrap items-center justify-center gap-4 text-[11px] text-slate-500 pt-3 border-t border-blue-100/80">
