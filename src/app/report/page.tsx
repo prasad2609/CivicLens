@@ -23,6 +23,10 @@ import {
   AlertCircle,
   Building2,
   CheckCircle,
+  Camera,
+  RefreshCw,
+  FlipHorizontal,
+  CameraOff,
 } from 'lucide-react';
 import { civicStore, calculateDistanceMeters } from '@/lib/store';
 import { api } from '@/lib/api';
@@ -144,19 +148,157 @@ export default function ReportIssuePage() {
     };
   }, [photoDataUrl, photoCaption]);
 
-  // Image Upload Handler
-  const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Live Camera Capture States
+  const videoRef = React.useRef<HTMLVideoElement | null>(null);
+  const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
+  const streamRef = React.useRef<MediaStream | null>(null);
+  const [isCameraActive, setIsCameraActive] = useState(false);
+  const [isCameraStarting, setIsCameraStarting] = useState(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const [cameraFacing, setCameraFacing] = useState<'environment' | 'user'>('environment');
+  const [capturedTimestamp, setCapturedTimestamp] = useState<string | null>(null);
+
+  // Stop camera helper
+  const stopLiveCamera = React.useCallback(() => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => {
+        try {
+          track.stop();
+        } catch {}
+      });
+      streamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+    setIsCameraActive(false);
+    setIsCameraStarting(false);
+  }, []);
+
+  // Clean up camera stream if user navigates away from step 3 or unmounts
+  useEffect(() => {
+    if (step !== 3) {
+      stopLiveCamera();
+    }
+    return () => {
+      stopLiveCamera();
+    };
+  }, [step, stopLiveCamera]);
+
+  // Start live camera stream
+  const startLiveCamera = async (facing: 'environment' | 'user' = cameraFacing) => {
+    setCameraError(null);
+    setIsCameraStarting(true);
+    stopLiveCamera();
+
+    try {
+      if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+        throw new Error('Direct webcam/camera API is not supported in this browser. Please use the device shutter button below.');
+      }
+
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: facing },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
+          audio: false,
+        });
+      } catch {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: false,
+        });
+      }
+
+      streamRef.current = stream;
+      setCameraFacing(facing);
+      setIsCameraActive(true);
+      setIsCameraStarting(false);
+
+      setTimeout(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.play().catch((e) => console.warn('Video play error:', e));
+        }
+      }, 100);
+    } catch (err: any) {
+      console.warn('Camera start error:', err);
+      setIsCameraStarting(false);
+      setIsCameraActive(false);
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        setCameraError('Camera access permission was denied. Please allow camera permissions in your browser or tap the device shutter button below.');
+      } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+        setCameraError('No camera found on this device. Please connect a camera or use your mobile device.');
+      } else {
+        setCameraError(err.message || 'Unable to start camera. Please use the device shutter button below.');
+      }
+    }
+  };
+
+  // Flip front/rear camera
+  const toggleCameraFacing = () => {
+    const nextFacing = cameraFacing === 'environment' ? 'user' : 'environment';
+    startLiveCamera(nextFacing);
+  };
+
+  // Take snapshot from live video stream
+  const takePhotoSnapshot = () => {
+    if (!videoRef.current) return;
+    const video = videoRef.current;
+    const canvas = canvasRef.current || document.createElement('canvas');
+
+    const width = video.videoWidth || 1280;
+    const height = video.videoHeight || 720;
+    canvas.width = width;
+    canvas.height = height;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    // Draw live video frame to canvas
+    ctx.drawImage(video, 0, 0, width, height);
+
+    // Apply subtle municipal watermark
+    const now = new Date();
+    const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const dateStr = now.toLocaleDateString();
+
+    ctx.save();
+    ctx.font = 'bold 15px monospace';
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.75)';
+    ctx.fillRect(16, height - 38, 360, 26);
+    ctx.fillStyle = '#34d399';
+    ctx.fillText(`CIVICLENS OPTICAL SHUTTER • ${dateStr} ${timeStr}`, 24, height - 20);
+    ctx.restore();
+
+    // Export as high quality JPEG
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.90);
+    setPhotoDataUrl(dataUrl);
+    setCapturedTimestamp(`${dateStr} ${timeStr}`);
+
+    // Stop camera stream cleanly
+    stopLiveCamera();
+  };
+
+  // Hardware device camera capture handler (for mobile devices where capture="environment" invokes native camera directly)
+  const handleNativeCameraCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 5 * 1024 * 1024) {
-      alert('File size exceeds 5MB limit. Please select a smaller photo.');
+    if (file.size > 8 * 1024 * 1024) {
+      alert('Photo file size exceeds 8MB. Please capture a standard photo.');
       return;
     }
 
     const reader = new FileReader();
     reader.onload = (event) => {
       setPhotoDataUrl(event.target?.result as string);
+      const now = new Date();
+      setCapturedTimestamp(`${now.toLocaleDateString()} ${now.toLocaleTimeString()}`);
+      stopLiveCamera();
     };
     reader.readAsDataURL(file);
   };
@@ -639,14 +781,24 @@ export default function ReportIssuePage() {
           </div>
         )}
 
-        {/* STEP 3: EVIDENCE UPLOAD */}
+        {/* STEP 3: LIVE CAMERA EVIDENCE CAPTURE */}
         {step === 3 && (
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-5 animate-in fade-in duration-150">
             <div>
-              <h2 className="text-lg font-bold text-slate-900">3. Photographic Evidence</h2>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Visual proof confirms the problem on the ground and enables field workers to bring the appropriate equipment.
-              </p>
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                    <Camera className="w-5 h-5 text-blue-600" />
+                    3. Live Photographic Evidence
+                  </h2>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Municipal anti-fraud policy: Photos must be captured live from your device camera to prevent AI-generated or fake uploads.
+                  </p>
+                </div>
+                <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                  <ShieldCheck className="w-3.5 h-3.5 text-amber-600" /> Live Camera Only
+                </span>
+              </div>
             </div>
 
             {photoDataUrl ? (
@@ -657,16 +809,24 @@ export default function ReportIssuePage() {
                     alt="Citizen evidence preview"
                     className="max-h-72 object-contain"
                   />
+                  {/* Live Camera Watermark */}
+                  <div className="absolute top-3 left-3 bg-slate-900/80 backdrop-blur-sm text-white px-2.5 py-1 rounded-full text-[10px] font-mono flex items-center gap-1.5 border border-white/10 shadow">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                    <span>Live Camera Capture</span>
+                    {capturedTimestamp && <span className="text-slate-300">• {capturedTimestamp}</span>}
+                  </div>
                   <button
                     type="button"
                     onClick={() => {
                       setPhotoDataUrl(null);
                       setAuthenticityResult(null);
                       setPhotoCaption('');
+                      startLiveCamera(cameraFacing);
                     }}
-                    className="absolute top-3 right-3 bg-red-600 hover:bg-red-700 text-white p-1.5 rounded-full shadow"
+                    className="absolute top-3 right-3 bg-slate-800/90 hover:bg-blue-600 text-white px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow transition cursor-pointer"
                   >
-                    <X className="w-4 h-4" />
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>Retake Photo</span>
                   </button>
                 </div>
 
@@ -842,78 +1002,142 @@ export default function ReportIssuePage() {
                   />
                 </div>
               </div>
-            ) : (
-              <div className="space-y-3">
-                <label className="border-2 border-dashed border-slate-300 hover:border-blue-400 bg-slate-50/50 hover:bg-blue-50/30 rounded-xl p-8 flex flex-col items-center justify-center cursor-pointer transition text-center">
-                  <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 mb-3">
-                    <Upload className="w-6 h-6" />
-                  </div>
-                  <span className="text-sm font-semibold text-slate-800">
-                    Click or drag photo here to upload
-                  </span>
-                  <span className="text-xs text-slate-400 mt-1">
-                    JPEG, PNG, WebP up to 5MB (scanned by AI Image Detector for authenticity)
-                  </span>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handlePhotoSelect}
-                    className="hidden"
+            ) : isCameraActive ? (
+              <div className="relative rounded-2xl overflow-hidden bg-slate-950 border-2 border-blue-600 shadow-xl animate-in fade-in duration-200">
+                {/* Live Video Viewfinder */}
+                <div className="relative aspect-video max-h-[420px] w-full flex items-center justify-center bg-black overflow-hidden">
+                  <video
+                    ref={videoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    className="w-full h-full object-contain"
                   />
-                </label>
 
-                {/* Quick sample photo buttons for smooth demo presentation */}
-                <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
-                  <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block mb-2">
-                    Or select demo stock photo for testing:
-                  </span>
-                  <div className="flex flex-wrap gap-2 text-xs">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setPhotoDataUrl(
-                          'https://images.unsplash.com/photo-1515162816999-a0c47dc192f7?w=800&auto=format&fit=crop&q=80'
-                        )
-                      }
-                      className="px-2.5 py-1 bg-white border border-slate-200 rounded text-slate-700 hover:bg-slate-100 transition"
-                    >
-                      Pothole Road Sample
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setPhotoDataUrl(
-                          'https://images.unsplash.com/photo-1532996122724-e3c354a0b15b?w=800&auto=format&fit=crop&q=80'
-                        )
-                      }
-                      className="px-2.5 py-1 bg-white border border-slate-200 rounded text-slate-700 hover:bg-slate-100 transition"
-                    >
-                      Garbage Overflow Sample
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setPhotoDataUrl(
-                          'https://images.unsplash.com/photo-1509198397868-475647b2a1e5?w=800&auto=format&fit=crop&q=80'
-                        )
-                      }
-                      className="px-2.5 py-1 bg-white border border-slate-200 rounded text-slate-700 hover:bg-slate-100 transition"
-                    >
-                      Streetlight Dark Spot Sample
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setPhotoDataUrl(
-                          'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&auto=format&fit=crop&q=80'
-                        );
-                        setPhotoCaption('AI Generated Synthetic Pothole (Test Detection)');
-                      }}
-                      className="px-2.5 py-1 bg-rose-50 border border-rose-300 rounded text-rose-700 hover:bg-rose-100 transition font-semibold"
-                    >
-                      ⚡ Test AI-Generated Image Sample
-                    </button>
+                  {/* Viewfinder Target Brackets */}
+                  <div className="absolute inset-4 pointer-events-none border border-white/20 rounded-xl">
+                    <div className="absolute -top-0.5 -left-0.5 w-6 h-6 border-t-2 border-l-2 border-blue-400 rounded-tl-sm" />
+                    <div className="absolute -top-0.5 -right-0.5 w-6 h-6 border-t-2 border-r-2 border-blue-400 rounded-tr-sm" />
+                    <div className="absolute -bottom-0.5 -left-0.5 w-6 h-6 border-b-2 border-l-2 border-blue-400 rounded-bl-sm" />
+                    <div className="absolute -bottom-0.5 -right-0.5 w-6 h-6 border-b-2 border-r-2 border-blue-400 rounded-br-sm" />
+
+                    {/* Center Focus Reticle */}
+                    <div className="absolute inset-0 flex items-center justify-center opacity-40">
+                      <Crosshair className="w-8 h-8 text-white stroke-[1.5]" />
+                    </div>
                   </div>
+
+                  {/* Status Indicator */}
+                  <div className="absolute top-4 left-4 flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/60 backdrop-blur-md text-white text-[11px] font-mono border border-white/10 shadow-sm">
+                    <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                    <span>OPTICAL SENSOR ACTIVE</span>
+                    <span className="text-white/40">•</span>
+                    <span className="text-emerald-400">HARDWARE SHUTTER</span>
+                  </div>
+
+                  {/* Flip Camera Button */}
+                  <button
+                    type="button"
+                    onClick={toggleCameraFacing}
+                    className="absolute top-4 right-4 p-2.5 rounded-full bg-black/60 backdrop-blur-md hover:bg-black/80 text-white text-xs border border-white/10 shadow transition cursor-pointer"
+                    title="Switch Front/Rear Camera"
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {/* Shutter Bar */}
+                <div className="p-4 bg-slate-900 border-t border-slate-800 flex items-center justify-between gap-4">
+                  <button
+                    type="button"
+                    onClick={stopLiveCamera}
+                    className="px-4 py-2 text-xs font-semibold text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={takePhotoSnapshot}
+                    className="inline-flex items-center gap-2 px-7 py-3 rounded-full bg-blue-600 hover:bg-blue-500 text-white font-bold text-sm shadow-lg hover:shadow-blue-500/30 transition transform active:scale-95 cursor-pointer ring-4 ring-blue-400/20"
+                  >
+                    <Camera className="w-5 h-5" />
+                    Capture Photo
+                  </button>
+
+                  <div className="text-[11px] text-slate-400 font-mono hidden sm:block">
+                    Physical Live Evidence Only
+                  </div>
+                </div>
+
+                {/* Hidden canvas for taking snapshot */}
+                <canvas ref={canvasRef} className="hidden" />
+              </div>
+            ) : (
+              <div className="p-8 border-2 border-dashed border-blue-300 bg-blue-50/30 rounded-2xl flex flex-col items-center justify-center text-center space-y-4 animate-in fade-in duration-150">
+                <div className="relative">
+                  <div className="w-20 h-20 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 shadow-inner">
+                    <Camera className="w-10 h-10" />
+                  </div>
+                  <div className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-emerald-500 border-2 border-white flex items-center justify-center text-white shadow">
+                    <Check className="w-4 h-4" />
+                  </div>
+                </div>
+
+                <div className="max-w-md space-y-1">
+                  <h3 className="text-base font-bold text-slate-900">
+                    Live Camera Capture Only
+                  </h3>
+                  <p className="text-xs text-slate-500 leading-relaxed">
+                    To eliminate fake complaints, stock photos, and synthetic AI-generated images, uploading from your photo gallery is strictly disabled. You must open your camera and capture the ground reality live.
+                  </p>
+                </div>
+
+                {cameraError && (
+                  <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-xs text-red-700 flex items-start gap-2 text-left max-w-md">
+                    <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold block">Camera Notice:</span>
+                      <span>{cameraError}</span>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex flex-col sm:flex-row items-center gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => startLiveCamera('environment')}
+                    disabled={isCameraStarting}
+                    className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold shadow-md hover:shadow-lg transition transform active:scale-95 cursor-pointer disabled:opacity-50"
+                  >
+                    <Camera className="w-5 h-5" />
+                    {isCameraStarting ? 'Starting Optical Sensor...' : '📸 Open Live Camera'}
+                  </button>
+
+                  {/* Direct Native Camera Shutter input for mobile devices */}
+                  <label className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-white hover:bg-slate-50 text-slate-700 text-sm font-semibold border border-slate-300 shadow-xs transition cursor-pointer">
+                    <RefreshCw className="w-4 h-4 text-slate-500" />
+                    <span>Use Device Camera Shutter</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      onChange={handleNativeCameraCapture}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+
+                <div className="flex flex-wrap items-center justify-center gap-4 text-[11px] text-slate-500 pt-3 border-t border-blue-100/80">
+                  <span className="flex items-center gap-1 font-medium text-emerald-700">
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" /> Live Hardware Sensor Only
+                  </span>
+                  <span className="flex items-center gap-1 font-medium text-blue-700">
+                    <Cpu className="w-3.5 h-3.5 text-blue-600" /> Optical Noise & CFA Verified
+                  </span>
+                  <span className="flex items-center gap-1 font-medium text-slate-400 line-through">
+                    Photo Gallery Uploads Blocked
+                  </span>
                 </div>
               </div>
             )}

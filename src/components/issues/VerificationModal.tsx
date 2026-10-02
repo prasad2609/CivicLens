@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { VerificationResult } from '@/types';
-import { CheckCircle2, RotateCcw, AlertTriangle, Upload, X, ShieldAlert } from 'lucide-react';
+import { CheckCircle2, RotateCcw, AlertTriangle, Camera, X, ShieldAlert } from 'lucide-react';
 
 interface VerificationModalProps {
   complaintCode: string;
@@ -180,11 +180,12 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
                 </div>
               ) : (
                 <label className="flex items-center justify-center gap-2 p-3 border-2 border-dashed border-slate-300 rounded-md text-xs text-slate-600 cursor-pointer hover:bg-slate-50 transition">
-                  <Upload className="w-4 h-4 text-slate-400" />
-                  <span>Attach photo showing ground reality</span>
+                  <Camera className="w-4 h-4 text-blue-600" />
+                  <span className="font-medium text-slate-700">Capture ground reality photo with camera</span>
                   <input
                     type="file"
                     accept="image/*"
+                    capture="environment"
                     onChange={handleFileChange}
                     className="hidden"
                   />

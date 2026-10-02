@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Wrench, X, Upload, CheckCircle2 } from 'lucide-react';
+import { Wrench, X, Camera, CheckCircle2 } from 'lucide-react';
 
 interface FieldWorkModalProps {
   complaintCode: string;
@@ -98,11 +98,12 @@ export const FieldWorkModal: React.FC<FieldWorkModalProps> = ({
               </div>
             ) : (
               <label className="flex items-center justify-center gap-2 p-3 border-2 border-dashed border-slate-300 rounded-md text-xs text-slate-600 cursor-pointer hover:bg-slate-50 transition">
-                <Upload className="w-4 h-4 text-slate-400" />
-                <span>Take or upload ground photo</span>
+                <Camera className="w-4 h-4 text-amber-600" />
+                <span className="font-medium text-slate-700">Capture site work photo with camera</span>
                 <input
                   type="file"
                   accept="image/*"
+                  capture="environment"
                   onChange={handleFileChange}
                   className="hidden"
                 />

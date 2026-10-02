@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { ShieldCheck, X, Upload } from 'lucide-react';
+import { ShieldCheck, X, Camera } from 'lucide-react';
 
 interface ResolveModalProps {
   complaintCode: string;
@@ -100,11 +100,12 @@ export const ResolveModal: React.FC<ResolveModalProps> = ({
               </div>
             ) : (
               <label className="flex items-center justify-center gap-2 p-3 border-2 border-dashed border-slate-300 rounded-md text-xs text-slate-600 cursor-pointer hover:bg-slate-50 transition">
-                <Upload className="w-4 h-4 text-slate-400" />
-                <span>Attach completed repair work photograph</span>
+                <Camera className="w-4 h-4 text-emerald-600" />
+                <span className="font-medium text-slate-700">Capture completed repair photograph with camera</span>
                 <input
                   type="file"
                   accept="image/*"
+                  capture="environment"
                   onChange={handleFileChange}
                   className="hidden"
                 />
