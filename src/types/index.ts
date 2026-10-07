@@ -497,8 +497,67 @@ export interface ConstituencyGenome {
 }
 
 // ====================================================================
-// 7. EVIDENCE-BASED AUTHORITY PERFORMANCE INDEX (EBAPI) Types
+// 7. EVIDENCE-BASED AUTHORITY PERFORMANCE & PROMOTION INDEX (EBAPI) Types
 // ====================================================================
+
+export type OfficerPromotionStatus =
+  | 'Fast-Track Promotion Recommended'
+  | 'Eligible for Seniority Promotion'
+  | 'Promotion Deferred - Performance Review'
+  | 'Promotion Frozen - Under Investigation';
+
+export interface PromotionalMilestone {
+  date: string;
+  title: string;
+  note: string;
+  status: 'completed' | 'in_progress' | 'pending';
+}
+
+export interface OfficerPerformanceScorecard {
+  officer_id: string;
+  officer_name: string;
+  employee_id: string;
+  designation: string;
+  department_id: string;
+  department_name: string;
+  department_code: string;
+  ward_jurisdiction: string;
+  years_in_current_cadre: number;
+  composite_index: number; // 0 - 100 Individual Score
+  rank: number;
+  total_assigned: number;
+  total_resolved: number;
+  on_time_resolution_count: number;
+  sla_compliance_pct: number;
+  avg_resolution_days: number;
+  verified_resolution_pct: number;
+  citizen_reopened_count: number;
+  reopening_rate_pct: number;
+  field_evidence_authenticity_score: number; // 0 - 100
+  citizen_satisfaction_rating: number; // 1.0 - 5.0
+  durability_rate_pct: number;
+  recurring_failure_penalty: number;
+  weights_breakdown: {
+    sla_score: number; // 30% max
+    speed_score: number; // 20% max
+    citizen_trust_score: number; // 20% max
+    durability_score: number; // 20% max
+    evidence_authenticity_score: number; // 10% max
+    recurring_penalty: number; // deduction
+  };
+  // Career Advancement & Promotion Matrix
+  promotion_eligibility: OfficerPromotionStatus;
+  next_promotion_cadre: string;
+  promotion_readiness_score: number; // 0 - 100
+  merit_points: number;
+  appraisal_cycle: string;
+  performance_tier: 'Exemplary' | 'Competent' | 'Needs Improvement' | 'Unsatisfactory';
+  appraisal_citation: string;
+  promotional_milestones: PromotionalMilestone[];
+  strengths: string[];
+  areas_for_growth: string[];
+  actionable_recommendations: string[];
+}
 
 export interface DepartmentScorecard {
   department_id: string;
@@ -524,10 +583,20 @@ export interface DepartmentScorecard {
   actionable_recommendations: string[];
 }
 
+export interface PromotionSummary {
+  total_officers_evaluated: number;
+  fast_track_promotable: number;
+  eligible_for_promotion: number;
+  deferred_count: number;
+  frozen_count: number;
+}
+
 export interface AuthorityIndexResponse {
   generated_at: string;
   formula_explanation: string;
+  officer_scorecards: OfficerPerformanceScorecard[];
   scorecards: DepartmentScorecard[];
+  promotion_summary?: PromotionSummary;
 }
 
 // ====================================================================

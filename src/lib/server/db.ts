@@ -25,6 +25,8 @@ import {
   VolunteerLeaderboardEntry,
   ConstituencyGenome,
   DepartmentScorecard,
+  OfficerPerformanceScorecard,
+  PromotionSummary,
   AuthorityIndexResponse,
   RecurringFailureCluster,
 } from '@/types';
@@ -45,6 +47,7 @@ import {
   INITIAL_SWARM_MISSIONS,
   INITIAL_VOLUNTEER_LEADERBOARD,
   INITIAL_CONSTITUENCY_GENOMES,
+  INITIAL_OFFICER_SCORECARDS,
 } from '@/data/civicIntelligenceData';
 
 export interface DatabaseState {
@@ -62,6 +65,7 @@ export interface DatabaseState {
   swarmMissions: VolunteerSwarmMission[];
   volunteerLeaderboard: VolunteerLeaderboardEntry[];
   genomes: Record<string, ConstituencyGenome>;
+  officerScorecards?: OfficerPerformanceScorecard[];
 }
 
 const DB_PATH = path.join(process.cwd(), 'src', 'data', 'server_db.json');
@@ -129,6 +133,10 @@ class ServerDatabase {
           this.state!.genomes = { ...INITIAL_CONSTITUENCY_GENOMES };
           modified = true;
         }
+        if (!this.state!.officerScorecards || this.state!.officerScorecards.length === 0) {
+          this.state!.officerScorecards = [...INITIAL_OFFICER_SCORECARDS];
+          modified = true;
+        }
         if (modified) {
           this.save();
         }
@@ -157,6 +165,7 @@ class ServerDatabase {
       swarmMissions: [...INITIAL_SWARM_MISSIONS],
       volunteerLeaderboard: [...INITIAL_VOLUNTEER_LEADERBOARD],
       genomes: { ...INITIAL_CONSTITUENCY_GENOMES },
+      officerScorecards: [...INITIAL_OFFICER_SCORECARDS],
     };
 
     this.save();
@@ -1482,13 +1491,150 @@ class ServerDatabase {
   }
 
   // ====================================================================
-  // 7. EVIDENCE-BASED AUTHORITY PERFORMANCE INDEX (EBAPI)
+  // 7. EVIDENCE-BASED AUTHORITY PERFORMANCE & PROMOTION INDEX (EBAPI)
   // ====================================================================
-  public getAuthorityPerformanceIndex(): AuthorityIndexResponse {
+  public getAuthorityPerformanceIndex(filters?: {
+    officer_id?: string;
+    department_id?: string;
+    promotion_status?: string;
+  }): AuthorityIndexResponse {
     const s = this.load();
     const depts = s.departments;
     const recurringClusters = this.getRecurringIssues();
+    const baselineOfficers =
+      s.officerScorecards && s.officerScorecards.length > 0
+        ? s.officerScorecards
+        : INITIAL_OFFICER_SCORECARDS;
 
+    // 1. COMPUTE INDIVIDUAL OFFICER PERFORMANCE & PROMOTION ELIGIBILITY
+    const computedOfficers: OfficerPerformanceScorecard[] = baselineOfficers.map((officer) => {
+      // Find real-time issues assigned directly to this officer or associated with their department
+      const relevantIssues = s.issues.filter(
+        (i) => i.assigned_officer_id === officer.officer_id || i.department_id === officer.department_id
+      );
+
+      const activeResolved = relevantIssues.filter(
+        (i) => i.status === 'resolved' || i.status === 'closed'
+      );
+      const activeOnTime = activeResolved.filter((i) => !i.is_overdue);
+
+      const slaCompliancePct =
+        activeResolved.length > 0
+          ? Math.round((activeOnTime.length / activeResolved.length) * 100)
+          : officer.sla_compliance_pct;
+
+      const avgResolutionDays = officer.avg_resolution_days;
+
+      const verifiedCount = activeResolved.filter(
+        (i) => i.verification?.result === 'completely_resolved'
+      ).length;
+      const verifiedResolutionPct =
+        activeResolved.length > 0
+          ? Math.round((verifiedCount / activeResolved.length) * 100)
+          : officer.verified_resolution_pct;
+
+      const reopenedCount = relevantIssues.filter(
+        (i) => i.status === 'reopened' || i.verification?.result === 'not_resolved'
+      ).length;
+      const reopeningRatePct =
+        activeResolved.length > 0
+          ? Math.round((reopenedCount / Math.max(1, activeResolved.length + reopenedCount)) * 100)
+          : officer.reopening_rate_pct;
+
+      const durabilityRatePct = Math.max(45, Math.min(100, 100 - reopeningRatePct * 2));
+      const field_evidence_authenticity_score = officer.field_evidence_authenticity_score;
+
+      // Penalty from recurring failure clusters in officer's department
+      const officerDeptClusters = recurringClusters.filter((c) => {
+        const cat = s.categories.find((catItem) => catItem.id === c.categoryId);
+        return cat?.default_department_id === officer.department_id;
+      });
+      const recurringFailurePenalty = Math.min(15, officerDeptClusters.length * 2.5);
+
+      // Weighted score components:
+      // SLA Score (30%), Speed Score (20%), Citizen Trust (20%), Durability (20%), Evidence Authenticity (10%)
+      const sla_score = Number(((slaCompliancePct / 100) * 30).toFixed(1));
+      const speed_score = Number(
+        Math.max(0, Math.min(20, (6 - avgResolutionDays) * 4)).toFixed(1)
+      );
+      const citizen_trust_score = Number(((verifiedResolutionPct / 100) * 20).toFixed(1));
+      const durability_score = Number(((durabilityRatePct / 100) * 20).toFixed(1));
+      const evidence_authenticity_score = Number(
+        ((field_evidence_authenticity_score / 100) * 10).toFixed(1)
+      );
+      const recurring_penalty = Number(
+        (recurringFailurePenalty + reopeningRatePct * 0.15).toFixed(1)
+      );
+
+      const composite = Math.min(
+        100,
+        Math.max(
+          25,
+          Number(
+            (
+              sla_score +
+              speed_score +
+              citizen_trust_score +
+              durability_score +
+              evidence_authenticity_score -
+              recurring_penalty
+            ).toFixed(1)
+          )
+        )
+      );
+
+      // PROMOTION ELIGIBILITY EVALUATION
+      let promotion_eligibility = officer.promotion_eligibility;
+      let performance_tier = officer.performance_tier;
+      let promotion_readiness_score = officer.promotion_readiness_score;
+
+      if (composite >= 88 && durabilityRatePct >= 88 && reopeningRatePct <= 5) {
+        promotion_eligibility = 'Fast-Track Promotion Recommended';
+        performance_tier = 'Exemplary';
+        promotion_readiness_score = Math.min(100, Math.round(composite + 4));
+      } else if (composite >= 75 && durabilityRatePct >= 75) {
+        promotion_eligibility = 'Eligible for Seniority Promotion';
+        performance_tier = 'Competent';
+        promotion_readiness_score = Math.round(composite);
+      } else if (composite >= 60) {
+        promotion_eligibility = 'Promotion Deferred - Performance Review';
+        performance_tier = 'Needs Improvement';
+        promotion_readiness_score = Math.round(composite * 0.9);
+      } else {
+        promotion_eligibility = 'Promotion Frozen - Under Investigation';
+        performance_tier = 'Unsatisfactory';
+        promotion_readiness_score = Math.round(composite * 0.8);
+      }
+
+      return {
+        ...officer,
+        composite_index: composite,
+        sla_compliance_pct: slaCompliancePct,
+        verified_resolution_pct: verifiedResolutionPct,
+        reopening_rate_pct: reopeningRatePct,
+        durability_rate_pct: durabilityRatePct,
+        recurring_failure_penalty: recurringFailurePenalty,
+        weights_breakdown: {
+          sla_score,
+          speed_score,
+          citizen_trust_score,
+          durability_score,
+          evidence_authenticity_score,
+          recurring_penalty,
+        },
+        promotion_eligibility,
+        performance_tier,
+        promotion_readiness_score,
+      };
+    });
+
+    // Rank individual officers descending by score
+    computedOfficers.sort((a, b) => b.composite_index - a.composite_index);
+    computedOfficers.forEach((sc, idx) => {
+      sc.rank = idx + 1;
+    });
+
+    // 2. COMPUTE DEPARTMENT ROLL-UP SCORECARDS
     const scorecards: DepartmentScorecard[] = depts.map((d) => {
       const assignedIssues = s.issues.filter((i) => i.department_id === d.id);
       const totalAssigned = assignedIssues.length;
@@ -1538,20 +1684,18 @@ class ServerDatabase {
 
       const durabilityRatePct = Math.max(65, 100 - reopeningRatePct * 2);
 
-      // Recurring penalty
       const deptClusters = recurringClusters.filter((c) => {
         const cat = s.categories.find((catItem) => catItem.id === c.categoryId);
         return cat?.default_department_id === d.id;
       });
       const recurringFailurePenalty = Math.min(15, deptClusters.length * 3);
 
-      // Score weight breakdown
-      const sla_score = Number(((slaCompliancePct / 100) * 30).toFixed(1)); // 30% weight
+      const sla_score = Number(((slaCompliancePct / 100) * 30).toFixed(1));
       const speed_score = Number(
         Math.max(0, Math.min(20, (6 - avgResolutionDays) * 4)).toFixed(1)
-      ); // 20% weight
-      const citizen_trust_score = Number(((verifiedResolutionPct / 100) * 25).toFixed(1)); // 25% weight
-      const durability_score = Number(((durabilityRatePct / 100) * 25).toFixed(1)); // 25% weight
+      );
+      const citizen_trust_score = Number(((verifiedResolutionPct / 100) * 25).toFixed(1));
+      const durability_score = Number(((durabilityRatePct / 100) * 25).toFixed(1));
       const reopening_penalty = Number(
         (recurringFailurePenalty + reopeningRatePct * 0.2).toFixed(1)
       );
@@ -1581,21 +1725,19 @@ class ServerDatabase {
       const actionable_recommendations: string[] = [];
       if (slaCompliancePct < 80)
         actionable_recommendations.push(
-          `Improve initial dispatch triage; SLA breach rate is currently ${(
-            100 - slaCompliancePct
-          ).toFixed(0)}%.`
+          `Improve dispatch triage; SLA breach rate is ${(100 - slaCompliancePct).toFixed(0)}%.`
         );
       if (reopeningRatePct > 10)
         actionable_recommendations.push(
-          `Mandate supervisory photographic pre-audit before marking tickets resolved to curb high reopening rate.`
+          `Mandate supervisory pre-audit before marking tickets resolved.`
         );
       if (deptClusters.length > 0)
         actionable_recommendations.push(
-          `Address ${deptClusters.length} repeat failure hotspot(s) with capital engineering overhauls rather than spot repairs.`
+          `Address ${deptClusters.length} repeat failure hotspot(s) with capital overhauls.`
         );
       if (actionable_recommendations.length === 0)
         actionable_recommendations.push(
-          `Maintain high-fidelity field response and continue weekly citizen resolution verification audits.`
+          `Maintain high-fidelity field response and citizen verification audits.`
         );
 
       return {
@@ -1623,17 +1765,46 @@ class ServerDatabase {
       };
     });
 
-    // Sort descending and assign ranks
     scorecards.sort((a, b) => b.composite_index - a.composite_index);
     scorecards.forEach((sc, idx) => {
       sc.rank = idx + 1;
     });
 
+    // Filter officers if requested
+    let filteredOfficers = computedOfficers;
+    if (filters?.officer_id) {
+      filteredOfficers = filteredOfficers.filter((o) => o.officer_id === filters.officer_id);
+    }
+    if (filters?.department_id) {
+      filteredOfficers = filteredOfficers.filter((o) => o.department_id === filters.department_id);
+    }
+    if (filters?.promotion_status) {
+      filteredOfficers = filteredOfficers.filter((o) => o.promotion_eligibility === filters.promotion_status);
+    }
+
+    const promotion_summary: PromotionSummary = {
+      total_officers_evaluated: computedOfficers.length,
+      fast_track_promotable: computedOfficers.filter(
+        (o) => o.promotion_eligibility === 'Fast-Track Promotion Recommended'
+      ).length,
+      eligible_for_promotion: computedOfficers.filter(
+        (o) => o.promotion_eligibility === 'Eligible for Seniority Promotion'
+      ).length,
+      deferred_count: computedOfficers.filter(
+        (o) => o.promotion_eligibility === 'Promotion Deferred - Performance Review'
+      ).length,
+      frozen_count: computedOfficers.filter(
+        (o) => o.promotion_eligibility === 'Promotion Frozen - Under Investigation'
+      ).length,
+    };
+
     return {
       generated_at: new Date().toISOString(),
       formula_explanation:
-        'Composite Index = SLA Score (30%) + Speed Score (20%) + Citizen Trust Score (25%) + Durability Score (25%) - Reopening & Repeat Penalty',
+        'Individual Authority Score = [SLA Score (30%)] + [Speed Score (20%)] + [Citizen Trust Score (20%)] + [Durability Score (20%)] + [Evidence Authenticity (10%)] - [Reopening & Recurrence Penalty]. Scores determine annual appraisal rating and promotion eligibility.',
+      officer_scorecards: filteredOfficers,
       scorecards,
+      promotion_summary,
     };
   }
 
