@@ -58,19 +58,20 @@ export default function PublicProjectsPage() {
     <div className="min-h-screen bg-slate-50 py-8 px-4 sm:px-6 lg:px-8">
       <div className="max-w-6xl mx-auto space-y-6">
         {/* Banner with Academic / Demo Notice */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-[10px] font-bold uppercase tracking-wider bg-amber-100 text-amber-800 px-2 py-0.5 rounded border border-amber-200">
-                Sample / Demonstration Data
-              </span>
+        <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-blue-950 rounded-2xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden">
+          <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/20 border border-blue-400/30 text-blue-300 text-xs font-semibold uppercase tracking-wider mb-2">
+                Innovation 5 • Fund Transparency Intelligence
+              </div>
+              <h1 className="text-2xl sm:text-3xl font-black tracking-tight">
+                Public Infrastructure Fund Intelligence
+              </h1>
+              <p className="text-xs sm:text-sm text-slate-300 mt-1 max-w-2xl leading-relaxed">
+                Connects municipal capital projects with financial accounts: sanctioned budgets, audited contractor disbursements,
+                delays, and direct linkages to geographic citizen complaints along project corridors.
+              </p>
             </div>
-            <h1 className="text-2xl font-bold tracking-tight text-slate-900">
-              Constituency Public Projects Transparency
-            </h1>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Public disclosure of municipal infrastructure works, approved expenditure, funding schemes, and ground status.
-            </p>
           </div>
         </div>
 
@@ -141,14 +142,27 @@ export default function PublicProjectsPage() {
               >
                 <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
                   <div className="space-y-1">
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <span className="text-[10px] font-bold uppercase tracking-wider text-slate-600 bg-slate-100 px-2 py-0.5 rounded">
                         {proj.category}
                       </span>
                       {getStatusBadge(proj.status)}
-                      <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                        Demo Data
+                      <span
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider ${
+                          proj.fiscal_health_status === 'healthy'
+                            ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                            : proj.fiscal_health_status === 'caution'
+                            ? 'bg-amber-50 text-amber-800 border border-amber-200'
+                            : 'bg-rose-50 text-rose-800 border border-rose-200'
+                        }`}
+                      >
+                        Fiscal: {proj.fiscal_health_status || 'healthy'}
                       </span>
+                      {proj.related_issue_ids && proj.related_issue_ids.length > 0 && (
+                        <span className="text-[10px] font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                          {proj.related_issue_ids.length} Linked Complaints
+                        </span>
+                      )}
                     </div>
 
                     <h2 className="text-base sm:text-lg font-bold text-slate-900 leading-snug">

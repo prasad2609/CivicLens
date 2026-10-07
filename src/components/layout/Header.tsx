@@ -16,6 +16,14 @@ import {
   Building2,
   Bot,
   PlusCircle,
+  Sparkles,
+  ChevronDown,
+  Dna,
+  Clock,
+  Users,
+  Scale,
+  Repeat,
+  Activity,
 } from 'lucide-react';
 import { civicStore } from '@/lib/store';
 import { UserRole, AppNotification, UserProfile } from '@/types';
@@ -27,6 +35,7 @@ export const Header: React.FC = () => {
   const [language, setLanguage] = useState<'en' | 'ta'>(civicStore.getLanguage());
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [showNotifMenu, setShowNotifMenu] = useState(false);
+  const [showInnovationsMenu, setShowInnovationsMenu] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
@@ -78,6 +87,18 @@ export const Header: React.FC = () => {
   };
 
   const navLinks = getNavLinks();
+
+  const innovationLinks = [
+    { href: '/civic-dna', label: 'Civic DNA (Asset Memory)', icon: Dna, desc: 'Permanent infrastructure health & fatigue' },
+    { href: '/time-machine', label: 'Civic Time Machine', icon: Clock, desc: 'Multi-phase Before/During/After durability' },
+    { href: '/swarm', label: 'Volunteer Swarm Mode', icon: Users, desc: 'Micro-tasks, community proof & karma' },
+    { href: '/accountability-genome', label: 'Accountability Genome', icon: Scale, desc: 'Constituency governance fingerprint' },
+    { href: '/authority-index', label: 'Authority Index (EBAPI)', icon: Activity, desc: 'Objective evidence-based scores' },
+    { href: '/recurring-failures', label: 'Recurring Failures', icon: Repeat, desc: 'Chronic failure & replacement alerts' },
+    { href: '/constituency-pulse', label: 'Constituency Pulse', icon: Sparkles, desc: 'Executive intelligence briefing report' },
+  ];
+
+  const isInnovationActive = innovationLinks.some((l) => pathname === l.href);
 
   return (
     <header className="sticky top-0 z-40 bg-white border-b border-slate-200 shadow-sm">
@@ -197,6 +218,69 @@ export const Header: React.FC = () => {
                   </Link>
                 );
               })}
+
+              {/* Civic Innovations Dropdown */}
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setShowInnovationsMenu(!showInnovationsMenu)}
+                  className={`inline-flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                    isInnovationActive || showInnovationsMenu
+                      ? 'bg-indigo-50 text-indigo-700 font-semibold'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                  }`}
+                >
+                  <Sparkles className="w-4 h-4 mr-1.5 text-indigo-600" />
+                  <span>Innovations</span>
+                  <span className="ml-1.5 px-1.5 py-0.5 bg-indigo-100 text-indigo-700 text-[10px] font-bold rounded-full">
+                    9
+                  </span>
+                  <ChevronDown className={`w-3.5 h-3.5 ml-1 transition-transform ${showInnovationsMenu ? 'rotate-180' : ''}`} />
+                </button>
+
+                {showInnovationsMenu && (
+                  <div
+                    className="absolute left-0 mt-2 w-80 bg-white rounded-xl shadow-xl border border-slate-200 py-2 z-50 animate-in fade-in slide-in-from-top-1"
+                    onMouseLeave={() => setShowInnovationsMenu(false)}
+                  >
+                    <div className="px-3.5 py-1.5 border-b border-slate-100 mb-1 flex items-center justify-between">
+                      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                        Governance Innovations
+                      </span>
+                      <span className="text-[10px] bg-emerald-100 text-emerald-800 font-semibold px-2 py-0.5 rounded-full">
+                        All Live
+                      </span>
+                    </div>
+
+                    <div className="space-y-0.5 px-1.5">
+                      {innovationLinks.map((item) => {
+                        const Icon = item.icon;
+                        const isCurrent = pathname === item.href;
+                        return (
+                          <Link
+                            key={item.href}
+                            href={item.href}
+                            onClick={() => setShowInnovationsMenu(false)}
+                            className={`flex items-start gap-2.5 px-2.5 py-2 rounded-lg text-xs transition ${
+                              isCurrent
+                                ? 'bg-indigo-50 text-indigo-900 font-medium'
+                                : 'text-slate-700 hover:bg-slate-50 hover:text-slate-900'
+                            }`}
+                          >
+                            <div className="p-1 rounded bg-indigo-100/70 text-indigo-700 mt-0.5 shrink-0">
+                              <Icon className="w-3.5 h-3.5" />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="font-semibold text-slate-900 leading-tight">{item.label}</p>
+                              <p className="text-[11px] text-slate-500 leading-normal line-clamp-1">{item.desc}</p>
+                            </div>
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
             </nav>
           </div>
 
@@ -371,6 +455,31 @@ export const Header: React.FC = () => {
               </Link>
             );
           })}
+
+          {/* Mobile Innovations Section */}
+          <div className="pt-2 mt-2 border-t border-slate-100">
+            <p className="px-3 text-[11px] font-bold text-indigo-700 uppercase tracking-wider mb-1 flex items-center gap-1.5">
+              <Sparkles className="w-3 h-3 text-indigo-600" />
+              Civic Innovations
+            </p>
+            {innovationLinks.map((item) => {
+              const Icon = item.icon;
+              const isActive = pathname === item.href;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={() => setMobileMenuOpen(false)}
+                  className={`flex items-center gap-2.5 px-3 py-1.5 rounded-md text-xs font-medium ${
+                    isActive ? 'bg-indigo-50 text-indigo-700 font-bold' : 'text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  <Icon className="w-3.5 h-3.5 text-indigo-500" />
+                  {item.label}
+                </Link>
+              );
+            })}
+          </div>
 
           <div className="pt-2 mt-2 border-t border-slate-100 flex items-center justify-between text-xs px-2">
             <Link
