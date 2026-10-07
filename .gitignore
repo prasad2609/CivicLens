@@ -47,4 +47,5 @@ next-env.d.ts
 
 # Large Model weights
 *.onnx
+*.pt
 models/
