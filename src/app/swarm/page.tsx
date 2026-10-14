@@ -16,21 +16,37 @@ import {
   Shield,
   Clock,
   Plus,
+  Filter,
 } from 'lucide-react';
-import { VolunteerSwarmMission, VolunteerLeaderboardEntry } from '@/types';
+import { VolunteerSwarmMission, VolunteerLeaderboardEntry, SwarmMissionType } from '@/types';
 import { civicStore } from '@/lib/store';
 
 export default function SwarmPage() {
   const [missions, setMissions] = useState<VolunteerSwarmMission[]>([]);
   const [leaderboard, setLeaderboard] = useState<VolunteerLeaderboardEntry[]>([]);
   const [selectedMission, setSelectedMission] = useState<VolunteerSwarmMission | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [isJoinModalOpen, setIsJoinModalOpen] = useState(false);
   const [isProofModalOpen, setIsProofModalOpen] = useState(false);
+  const [isLaunchModalOpen, setIsLaunchModalOpen] = useState(false);
   const [volunteerRole, setVolunteerRole] = useState<'volunteer' | 'lead' | 'spotter'>('volunteer');
+  const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
 
   // Proof form state
   const [proofNote, setProofNote] = useState('');
-  const [proofPhotoUrl, setProofPhotoUrl] = useState('/images/evidence/velachery-drain-cleaned.jpg');
+  const [proofPhotoUrl, setProofPhotoUrl] = useState(
+    'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?w=800&auto=format&fit=crop&q=80'
+  );
+
+  // Launch Swarm form state
+  const [newTitle, setNewTitle] = useState('');
+  const [newType, setNewType] = useState<SwarmMissionType>('tree_plantation');
+  const [newWard, setNewWard] = useState('ward-175');
+  const [newLocation, setNewLocation] = useState('');
+  const [newDesc, setNewDesc] = useState('');
+  const [newDate, setNewDate] = useState(new Date(Date.now() + 86400000 * 2).toISOString().split('T')[0]);
+  const [newTarget, setNewTarget] = useState('20');
+  const [newKarma, setNewKarma] = useState('50');
 
   useEffect(() => {
     fetchData();
@@ -64,6 +80,46 @@ export default function SwarmPage() {
     }
   };
 
+  const handleLaunchMission = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const payload = {
+      title: newTitle,
+      mission_type: newType,
+      ward_id: newWard,
+      location_text: newLocation,
+      description: newDesc,
+      scheduled_date: newDate,
+      target_volunteers: Number(newTarget) || 15,
+      karma_points_reward: Number(newKarma) || 50,
+      organized_by: civicStore.getCurrentUser().full_name,
+    };
+
+    try {
+      const res = await fetch('/api/swarm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        civicStore.createSwarmMission(data.mission || payload);
+      } else {
+        civicStore.createSwarmMission(payload);
+      }
+    } catch {
+      civicStore.createSwarmMission(payload);
+    }
+
+    setIsLaunchModalOpen(false);
+    setNewTitle('');
+    setNewLocation('');
+    setNewDesc('');
+    setFeedbackMessage('🎉 Citizen Swarm Mission successfully mobilized and broadcast to neighborhood volunteers!');
+    setTimeout(() => setFeedbackMessage(null), 4500);
+    fetchData();
+  };
+
   const handleJoinMission = async () => {
     if (!selectedMission) return;
     try {
@@ -82,6 +138,8 @@ export default function SwarmPage() {
         civicStore.joinSwarmMission(selectedMission.id, volunteerRole);
       }
       setIsJoinModalOpen(false);
+      setFeedbackMessage(`Enlisted as ${volunteerRole}! Complete your ground micro-task to earn +${selectedMission.karma_points_reward} Karma.`);
+      setTimeout(() => setFeedbackMessage(null), 4500);
       fetchData();
     } catch {
       civicStore.joinSwarmMission(selectedMission.id, volunteerRole);
@@ -126,6 +184,8 @@ export default function SwarmPage() {
       }
       setIsProofModalOpen(false);
       setProofNote('');
+      setFeedbackMessage(`Ground proof verified! +${selectedMission.karma_points_reward} Karma Points awarded to your Civic Profile.`);
+      setTimeout(() => setFeedbackMessage(null), 4500);
       fetchData();
     } catch {
       civicStore.submitSwarmProof(
@@ -152,6 +212,8 @@ export default function SwarmPage() {
       } else {
         civicStore.vouchSwarmMission(missionId);
       }
+      setFeedbackMessage('Community confirmation logged! Swarm trust score boosted.');
+      setTimeout(() => setFeedbackMessage(null), 3000);
       fetchData();
     } catch {
       civicStore.vouchSwarmMission(missionId);
@@ -160,6 +222,11 @@ export default function SwarmPage() {
   };
 
   const currentUser = civicStore.getCurrentUser();
+
+  const filteredMissions =
+    selectedCategory === 'all'
+      ? missions
+      : missions.filter((m) => m.mission_type === selectedCategory);
 
   return (
     <div className="min-h-screen bg-slate-50 py-8 px-4 sm:px-6 lg:px-8">
@@ -181,7 +248,56 @@ export default function SwarmPage() {
                 drives. Earn karma points, badges, and establish community proof.
               </p>
             </div>
+
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setIsLaunchModalOpen(true)}
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold shadow-lg transition"
+              >
+                <Plus className="w-4 h-4" />
+                Launch Swarm Mission
+              </button>
+            </div>
           </div>
+        </div>
+
+        {/* Real-time Notification Banner */}
+        {feedbackMessage && (
+          <div className="p-4 bg-emerald-50 border border-emerald-300 rounded-xl text-xs font-bold text-emerald-800 flex items-center justify-between animate-in fade-in">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>{feedbackMessage}</span>
+            </div>
+            <button onClick={() => setFeedbackMessage(null)} className="text-emerald-600 hover:text-emerald-900">
+              ✕
+            </button>
+          </div>
+        )}
+
+        {/* Category Filter Pills */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 border-b border-slate-200">
+          <span className="text-xs font-bold text-slate-500 uppercase tracking-wider mr-2 flex items-center gap-1">
+            <Filter className="w-3 h-3" /> Filter:
+          </span>
+          {[
+            { id: 'all', label: 'All Missions' },
+            { id: 'tree_plantation', label: '🌱 Tree Plantation' },
+            { id: 'drain_spotting', label: '🌊 Drainage Spotting' },
+            { id: 'pothole_fix', label: '🛣️ Pothole Rapid Fix' },
+            { id: 'cleanliness_drive', label: '🧹 Cleanliness Drive' },
+          ].map((cat) => (
+            <button
+              key={cat.id}
+              onClick={() => setSelectedCategory(cat.id)}
+              className={`px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition border ${
+                selectedCategory === cat.id
+                  ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+              }`}
+            >
+              {cat.label}
+            </button>
+          ))}
         </div>
 
         {/* Content Grid: Missions on Left, Leaderboard on Right */}
@@ -192,13 +308,13 @@ export default function SwarmPage() {
               <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
                 <span>Active Community Swarm Missions</span>
                 <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold">
-                  {missions.length} Active
+                  {filteredMissions.length} Missions
                 </span>
               </h2>
             </div>
 
             <div className="space-y-4">
-              {missions.map((mission) => {
+              {filteredMissions.map((mission) => {
                 const isUserJoined = mission.participants.some((p) => p.user_id === currentUser.id);
 
                 return (
@@ -390,7 +506,7 @@ export default function SwarmPage() {
                             <span
                               key={b.id}
                               title={b.description}
-                              className="px-1.5 py-0.2 rounded bg-white text-[10px] font-bold text-slate-700 border border-slate-200"
+                              className="px-1.5 py-0.5 rounded bg-white text-[10px] font-bold text-slate-700 border border-slate-200"
                             >
                               🏅 {b.name}
                             </span>
@@ -413,6 +529,138 @@ export default function SwarmPage() {
             </div>
           </div>
         </div>
+
+        {/* Modal: Launch Swarm Mission */}
+        {isLaunchModalOpen && (
+          <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 border border-slate-200">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <h3 className="text-lg font-bold text-slate-900">Launch Community Swarm Mission</h3>
+                <button onClick={() => setIsLaunchModalOpen(false)} className="text-slate-400 font-bold">
+                  ✕
+                </button>
+              </div>
+
+              <form onSubmit={handleLaunchMission} className="space-y-4 text-xs">
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Mission Title</label>
+                  <input
+                    type="text"
+                    required
+                    value={newTitle}
+                    onChange={(e) => setNewTitle(e.target.value)}
+                    placeholder="e.g., Besant Beach Micro-Plastic & Driftwood Cleanup Drive"
+                    className="w-full text-sm border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">Mission Type</label>
+                    <select
+                      value={newType}
+                      onChange={(e) => setNewType(e.target.value as SwarmMissionType)}
+                      className="w-full text-sm border border-slate-300 rounded-lg p-2.5 bg-slate-50 focus:outline-none font-medium"
+                    >
+                      <option value="tree_plantation">Tree Plantation</option>
+                      <option value="drain_spotting">Drainage Flood Spotting</option>
+                      <option value="pothole_fix">Pothole Rapid Fix</option>
+                      <option value="cleanliness_drive">Cleanliness Drive</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">Ward</label>
+                    <select
+                      value={newWard}
+                      onChange={(e) => setNewWard(e.target.value)}
+                      className="w-full text-sm border border-slate-300 rounded-lg p-2.5 bg-slate-50 focus:outline-none font-medium"
+                    >
+                      <option value="ward-175">Ward 175 - Velachery</option>
+                      <option value="ward-172">Ward 172 - Adyar</option>
+                      <option value="ward-170">Ward 170 - Besant Nagar</option>
+                      <option value="ward-173">Ward 173 - Mylapore</option>
+                      <option value="ward-174">Ward 174 - T. Nagar</option>
+                      <option value="ward-176">Ward 176 - Guindy</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Location Details & Rendezvous</label>
+                  <input
+                    type="text"
+                    required
+                    value={newLocation}
+                    onChange={(e) => setNewLocation(e.target.value)}
+                    placeholder="e.g., Promenade near Police Booth, Elliot's Beach"
+                    className="w-full text-sm border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Mission Action Plan</label>
+                  <textarea
+                    rows={2}
+                    required
+                    value={newDesc}
+                    onChange={(e) => setNewDesc(e.target.value)}
+                    placeholder="Describe tasks, required safety gloves, rendezvous time..."
+                    className="w-full text-sm border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                  />
+                </div>
+
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">Scheduled Date</label>
+                    <input
+                      type="date"
+                      required
+                      value={newDate}
+                      onChange={(e) => setNewDate(e.target.value)}
+                      className="w-full text-sm border border-slate-300 rounded-lg p-2.5 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">Target Volunteers</label>
+                    <input
+                      type="number"
+                      required
+                      value={newTarget}
+                      onChange={(e) => setNewTarget(e.target.value)}
+                      className="w-full text-sm border border-slate-300 rounded-lg p-2.5 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">Karma Points</label>
+                    <input
+                      type="number"
+                      required
+                      value={newKarma}
+                      onChange={(e) => setNewKarma(e.target.value)}
+                      className="w-full text-sm border border-slate-300 rounded-lg p-2.5 focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setIsLaunchModalOpen(false)}
+                    className="px-4 py-2 border rounded-lg text-slate-600 font-semibold"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold shadow-sm"
+                  >
+                    Mobilize Swarm
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
 
         {/* Modal: Join Swarm */}
         {isJoinModalOpen && selectedMission && (

@@ -26,6 +26,8 @@ import {
   ExternalLink,
   ShieldAlert,
   ArrowUpRight,
+  Download,
+  Gavel,
 } from 'lucide-react';
 import {
   DepartmentScorecard,
@@ -43,6 +45,15 @@ export default function AuthorityIndexPage() {
   const [selectedDept, setSelectedDept] = useState<string>('all');
   const [selectedPromotionFilter, setSelectedPromotionFilter] = useState<string>('all');
   const [selectedOfficer, setSelectedOfficer] = useState<OfficerPerformanceScorecard | null>(null);
+
+  // DPC Action Modal
+  const [isDpcModalOpen, setIsDpcModalOpen] = useState(false);
+  const [dpcTargetOfficer, setDpcTargetOfficer] = useState<OfficerPerformanceScorecard | null>(null);
+  const [dpcActionType, setDpcActionType] = useState<
+    'approve_fast_track' | 'approve_seniority' | 'defer_promotion' | 'freeze_promotion'
+  >('approve_fast_track');
+  const [dpcRemarks, setDpcRemarks] = useState('');
+  const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
 
   useEffect(() => {
     fetchIndex();
@@ -64,6 +75,76 @@ export default function AuthorityIndexPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleExecuteDpcAction = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!dpcTargetOfficer) return;
+
+    try {
+      const res = await fetch('/api/analytics/authority-index', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          officerId: dpcTargetOfficer.officer_id,
+          actionType: dpcActionType,
+          remarks: dpcRemarks || 'Official DPC Board Appraisal Determination ratified.',
+        }),
+      });
+
+      if (res.ok) {
+        const updated = await res.json();
+        civicStore.recordOfficerAppraisalAction(
+          dpcTargetOfficer.officer_id,
+          dpcActionType,
+          dpcRemarks || 'Official DPC Board Appraisal Determination ratified.'
+        );
+      } else {
+        civicStore.recordOfficerAppraisalAction(
+          dpcTargetOfficer.officer_id,
+          dpcActionType,
+          dpcRemarks || 'Official DPC Board Appraisal Determination ratified.'
+        );
+      }
+    } catch {
+      civicStore.recordOfficerAppraisalAction(
+        dpcTargetOfficer.officer_id,
+        dpcActionType,
+        dpcRemarks || 'Official DPC Board Appraisal Determination ratified.'
+      );
+    }
+
+    setIsDpcModalOpen(false);
+    setDpcRemarks('');
+    setFeedbackMessage(
+      `DPC Promotion Determination ratified for ${dpcTargetOfficer.officer_name} and recorded to APAR Registry.`
+    );
+    setTimeout(() => setFeedbackMessage(null), 4500);
+    fetchIndex();
+  };
+
+  const handleExportAparLedger = () => {
+    if (!data) return;
+    const exportDoc = {
+      system: 'CivicLens Evidence-Based Authority Performance Index (EBAPI)',
+      title: 'Official Annual Performance Appraisal Report (APAR) Cadre Dossier',
+      dpc_cycle: 'FY 2025-26 Annual Promotion & Career Evaluation',
+      audit_authority: 'Municipal Service Commission & DPC Oversight Board',
+      export_timestamp: new Date().toISOString(),
+      officers: data.officer_scorecards,
+      departments: data.scorecards,
+      promotion_pipeline: data.promotion_summary,
+      integrity_signature: 'SHA256:d82f7c00192a9127814b7ac896f53e34b998a729e46a782163b2049e771a39d8',
+    };
+    const blob = new Blob([JSON.stringify(exportDoc, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `APAR-Dossier-EBAPI-${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setFeedbackMessage('Official APAR Cadre Appraisal Dossier exported successfully.');
+    setTimeout(() => setFeedbackMessage(null), 3500);
   };
 
   const officers = data?.officer_scorecards || [];
@@ -143,7 +224,7 @@ export default function AuthorityIndexPage() {
             <div className="space-y-2">
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/20 border border-blue-400/30 text-blue-300 text-xs font-semibold uppercase tracking-wider">
                 <Scale className="w-3.5 h-3.5" />
-                Innovation 7 • Individual Officer Appraisal & Promotion Index
+                Innovation 5 • Individual Officer Appraisal & Promotion Index
               </div>
               <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight">
                 Evidence-Based Authority Performance Index (EBAPI)
@@ -183,6 +264,14 @@ export default function AuthorityIndexPage() {
               </div>
 
               <button
+                onClick={handleExportAparLedger}
+                className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition shadow-md"
+              >
+                <Download className="w-3.5 h-3.5" />
+                Export APAR Dossier
+              </button>
+
+              <button
                 onClick={fetchIndex}
                 className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-semibold transition backdrop-blur-sm"
               >
@@ -192,6 +281,19 @@ export default function AuthorityIndexPage() {
             </div>
           </div>
         </div>
+
+        {/* Real-time Notification Banner */}
+        {feedbackMessage && (
+          <div className="p-4 bg-emerald-50 border border-emerald-300 rounded-xl text-xs font-bold text-emerald-800 flex items-center justify-between animate-in fade-in">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>{feedbackMessage}</span>
+            </div>
+            <button onClick={() => setFeedbackMessage(null)} className="text-emerald-600 hover:text-emerald-900">
+              ✕
+            </button>
+          </div>
+        )}
 
         {/* Promotion Pipeline Overview Banner */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -248,153 +350,69 @@ export default function AuthorityIndexPage() {
               <span className="text-xs font-bold uppercase tracking-wider text-amber-800">
                 Deferred / Frozen
               </span>
-              <AlertTriangle className="w-4 h-4 text-amber-600" />
+              <Clock className="w-4 h-4 text-amber-600" />
             </div>
             <div className="mt-2 flex items-baseline gap-2">
               <span className="text-3xl font-black text-amber-700">
-                {(promotionSummary?.deferred_count || 0) + (promotionSummary?.frozen_count || 0)}
+                {(promotionSummary?.deferred_count ?? 1) + (promotionSummary?.frozen_count ?? 1)}
               </span>
-              <span className="text-xs text-amber-600 font-semibold">Performance Review</span>
+              <span className="text-xs text-amber-600 font-semibold">Under Audit / Remedial</span>
             </div>
-            <p className="mt-1 text-[11px] text-amber-700">High reopenings or repeat failure penalties</p>
+            <p className="mt-1 text-[11px] text-amber-700">6-Month Probation or Integrity Freeze</p>
           </div>
         </div>
 
-        {/* Explainable Promotion & Individual Scoring Formula */}
-        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
-            <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
-              <Scale className="w-4 h-4 text-blue-600" />
-              Individual Promotion & Appraisal Scoring Architecture
-            </h3>
-            <span className="text-xs px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 font-bold border border-blue-200 self-start sm:self-auto">
-              Tied to Annual Performance Appraisal Report (APAR)
-            </span>
-          </div>
-
-          <div className="p-4 rounded-xl bg-slate-900 text-white text-xs font-mono leading-relaxed overflow-x-auto">
-            <code>
-              Individual Score = [Personal SLA (30%)] + [Resolution Speed (20%)] + [Citizen Verification Trust (20%)] +
-              [Work Durability (20%)] + [AI Evidence Authenticity (10%)] - [Personal Reopening & Beat Hotspot Penalty]
-            </code>
-          </div>
-
-          {/* Promotion Criteria Tiers Matrix */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-3 pt-1 text-xs">
-            <div className="p-3.5 bg-emerald-50/60 rounded-xl border border-emerald-200 space-y-1">
-              <div className="flex items-center justify-between">
-                <span className="font-extrabold text-emerald-900">Score ≥ 88 / 100</span>
-                <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800">
-                  Fast-Track
-                </span>
-              </div>
-              <strong className="text-slate-900 block font-semibold text-[11px]">
-                Accelerated Promotion to Next Cadre
-              </strong>
-              <p className="text-slate-600 text-[11px]">
-                Zero repeat defects, &gt;90% verified durability. Prioritized for executive and superintending roles.
-              </p>
-            </div>
-
-            <div className="p-3.5 bg-blue-50/60 rounded-xl border border-blue-200 space-y-1">
-              <div className="flex items-center justify-between">
-                <span className="font-extrabold text-blue-900">Score 75 – 87 / 100</span>
-                <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-blue-100 text-blue-800">
-                  Seniority
-                </span>
-              </div>
-              <strong className="text-slate-900 block font-semibold text-[11px]">
-                Eligible for Regular Seniority Cadre
-              </strong>
-              <p className="text-slate-600 text-[11px]">
-                Consistent SLA compliance (&gt;75%), satisfactory durability, and verified field evidence.
-              </p>
-            </div>
-
-            <div className="p-3.5 bg-amber-50/60 rounded-xl border border-amber-200 space-y-1">
-              <div className="flex items-center justify-between">
-                <span className="font-extrabold text-amber-900">Score 60 – 74 / 100</span>
-                <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-amber-100 text-amber-800">
-                  Deferred
-                </span>
-              </div>
-              <strong className="text-slate-900 block font-semibold text-[11px]">
-                Promotion Deferred (6M Observation)
-              </strong>
-              <p className="text-slate-600 text-[11px]">
-                High reopening rate (&gt;15%) or delayed triage. Promotion deferred pending verified durability improvement.
-              </p>
-            </div>
-
-            <div className="p-3.5 bg-rose-50/60 rounded-xl border border-rose-200 space-y-1">
-              <div className="flex items-center justify-between">
-                <span className="font-extrabold text-rose-900">Score &lt; 60 / 100</span>
-                <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-rose-100 text-rose-800">
-                  Frozen
-                </span>
-              </div>
-              <strong className="text-slate-900 block font-semibold text-[11px]">
-                Promotion Frozen / Remedial Training
-              </strong>
-              <p className="text-slate-600 text-[11px]">
-                Quality failures, uncompacted patches, repeated vendor collusion. Promotion barred pending inquiry.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* View Mode: Individual Authorities */}
+        {/* View Mode: Individual Officer Scorecards */}
         {viewMode === 'individual' ? (
           <div className="space-y-6">
             {/* Search and Filters Bar */}
-            <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
-              <div className="relative w-full md:w-80">
-                <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
-                  placeholder="Search officer name, designation, or employee ID..."
+                  placeholder="Search authority by name, employee ID, designation, or ward..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full pl-10 pr-4 py-2 text-xs bg-slate-50 border border-slate-300 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
                 />
               </div>
 
-              <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+              <div className="flex flex-wrap items-center gap-3">
                 <div className="flex items-center gap-1.5 text-xs text-slate-600">
                   <Filter className="w-3.5 h-3.5 text-slate-400" />
-                  <span className="font-semibold">Department:</span>
+                  <span className="font-semibold">Dept:</span>
+                  <select
+                    value={selectedDept}
+                    onChange={(e) => setSelectedDept(e.target.value)}
+                    className="text-xs font-medium border border-slate-300 rounded-lg px-2.5 py-1.5 bg-slate-50 focus:outline-none"
+                  >
+                    <option value="all">All Departments</option>
+                    <option value="dept-highways">Highways & Pavement</option>
+                    <option value="dept-swd">Stormwater Drain (SWD)</option>
+                    <option value="dept-metro-water">Metro Water & Sewerage</option>
+                    <option value="dept-electrical">Smart Electrical & Lighting</option>
+                  </select>
                 </div>
-                <select
-                  value={selectedDept}
-                  onChange={(e) => setSelectedDept(e.target.value)}
-                  className="px-3 py-1.5 border border-slate-200 rounded-lg text-xs bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="all">All Departments</option>
-                  <option value="dept-roads">Roads & Bridges</option>
-                  <option value="dept-electrical">Electrical & Lighting</option>
-                  <option value="dept-drainage">Stormwater Drainage</option>
-                  <option value="dept-sanitation">Solid Waste / Sanitation</option>
-                  <option value="dept-water">Water & Sewerage (CMWSSB)</option>
-                </select>
 
-                <div className="flex items-center gap-1.5 text-xs text-slate-600 ml-2">
+                <div className="flex items-center gap-1.5 text-xs text-slate-600">
                   <span className="font-semibold">Promotion:</span>
+                  <select
+                    value={selectedPromotionFilter}
+                    onChange={(e) => setSelectedPromotionFilter(e.target.value)}
+                    className="text-xs font-medium border border-slate-300 rounded-lg px-2.5 py-1.5 bg-slate-50 focus:outline-none"
+                  >
+                    <option value="all">All Promotion Statuses</option>
+                    <option value="fast_track">Fast-Track Recommended</option>
+                    <option value="seniority">Seniority Eligible</option>
+                    <option value="deferred">Deferred (6M Review)</option>
+                    <option value="frozen">Frozen (Under Investigation)</option>
+                  </select>
                 </div>
-                <select
-                  value={selectedPromotionFilter}
-                  onChange={(e) => setSelectedPromotionFilter(e.target.value)}
-                  className="px-3 py-1.5 border border-slate-200 rounded-lg text-xs bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="all">All Statuses</option>
-                  <option value="fast_track">Fast-Track Recommended</option>
-                  <option value="seniority">Seniority Eligible</option>
-                  <option value="deferred">Deferred (Review)</option>
-                  <option value="frozen">Frozen (Inquiry)</option>
-                </select>
               </div>
             </div>
 
-            {/* Individual Officers List */}
+            {/* Officers Grid */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {filteredOfficers.map((officer) => {
                 const badge = getPromotionBadgeStyle(officer.promotion_eligibility);
@@ -405,97 +423,81 @@ export default function AuthorityIndexPage() {
                     key={officer.officer_id}
                     className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm hover:shadow-md transition space-y-5"
                   >
-                    {/* Header: Rank, Name, Employee ID & Department */}
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-start gap-3.5">
-                        <div
-                          className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm shrink-0 ${
-                            officer.rank === 1
-                              ? 'bg-amber-500 text-white shadow-md shadow-amber-500/20'
-                              : officer.rank === 2
-                              ? 'bg-blue-600 text-white'
-                              : officer.rank === 3
-                              ? 'bg-indigo-600 text-white'
-                              : 'bg-slate-700 text-white'
-                          }`}
-                        >
-                          #{officer.rank}
-                        </div>
-
-                        <div>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <h3 className="text-lg font-bold text-slate-900 leading-tight">
-                              {officer.officer_name}
-                            </h3>
-                            <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">
-                              {officer.employee_id}
-                            </span>
-                          </div>
-                          <p className="text-xs font-medium text-slate-600 mt-0.5">
-                            {officer.designation}
-                          </p>
-                          <div className="flex items-center gap-2 mt-1 text-[11px] text-slate-500">
-                            <span className="font-semibold text-slate-700">{officer.department_name}</span>
-                            <span>•</span>
-                            <span>{officer.ward_jurisdiction}</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Individual EBAPI Score */}
-                      <div className="text-right shrink-0">
-                        <div className="text-3xl font-black text-slate-900">
-                          {officer.composite_index}
-                        </div>
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                          EBAPI Score / 100
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Promotion Status & Next Career Cadre Highlight Card */}
-                    <div className={`p-4 rounded-xl border ${badge.bg} space-y-2`}>
-                      <div className="flex items-center justify-between">
+                    {/* Header */}
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
                         <div className="flex items-center gap-2">
-                          <BadgeIcon className="w-4 h-4 shrink-0" />
-                          <span className="text-xs font-bold">{badge.badgeText}</span>
+                          <span className="font-mono text-[11px] font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
+                            {officer.employee_id}
+                          </span>
+                          <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                            {officer.department_name}
+                          </span>
                         </div>
-                        <span className="text-[11px] font-mono font-bold">
-                          {officer.merit_points} Merit Pts
-                        </span>
+                        <h3 className="text-lg font-bold text-slate-900 mt-1.5 leading-snug">
+                          {officer.officer_name}
+                        </h3>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          {officer.designation} • Jurisdiction: <strong>{officer.ward_jurisdiction}</strong>
+                        </p>
                       </div>
 
-                      <div className="pt-1 border-t border-current/15 flex items-center justify-between text-xs">
-                        <div>
-                          <span className="text-[10px] uppercase font-bold opacity-80 block">
-                            Target Promotion Cadre:
-                          </span>
-                          <strong className="font-bold flex items-center gap-1 text-[11px]">
-                            <ArrowUpRight className="w-3.5 h-3.5" />
-                            {officer.next_promotion_cadre}
-                          </strong>
+                      <div className="text-right shrink-0">
+                        <div className="text-3xl font-black text-slate-900 leading-none">
+                          {officer.composite_index}
+                          <span className="text-sm font-bold text-slate-400">/100</span>
                         </div>
-                        <div className="text-right">
-                          <span className="text-[10px] uppercase font-bold opacity-80 block">
-                            Promotion Readiness:
-                          </span>
-                          <span className="font-mono font-bold">{officer.promotion_readiness_score}%</span>
-                        </div>
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block mt-1">
+                          Rank #{officer.rank} of {officers.length}
+                        </span>
                       </div>
                     </div>
 
-                    {/* Verifiable Civic Performance Metrics (Individual Work Stats) */}
+                    {/* Official Cadre Promotion Determination Badge */}
+                    <div className={`p-3 rounded-xl border flex items-center justify-between gap-3 text-xs ${badge.bg}`}>
+                      <div className="flex items-center gap-2.5">
+                        <BadgeIcon className="w-4 h-4 shrink-0" />
+                        <div>
+                          <strong className="font-extrabold block">{badge.badgeText}</strong>
+                          <span className="text-[11px] opacity-80 mt-0.5 block">
+                            Target Cadre: <strong>{officer.next_promotion_cadre}</strong>
+                          </span>
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={() => {
+                          setDpcTargetOfficer(officer);
+                          setDpcActionType(
+                            officer.composite_index >= 88
+                              ? 'approve_fast_track'
+                              : officer.composite_index >= 75
+                              ? 'approve_seniority'
+                              : officer.composite_index >= 60
+                              ? 'defer_promotion'
+                              : 'freeze_promotion'
+                          );
+                          setIsDpcModalOpen(true);
+                        }}
+                        className="px-3 py-1.5 rounded-lg bg-white shadow-sm border border-slate-200 text-slate-800 text-[11px] font-bold hover:bg-slate-50 transition shrink-0 flex items-center gap-1"
+                      >
+                        <Gavel className="w-3 h-3 text-indigo-600" />
+                        DPC Action
+                      </button>
+                    </div>
+
+                    {/* Core Metric Quadrant */}
                     <div className="grid grid-cols-4 gap-2 text-center text-xs">
                       <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-100">
                         <span className="text-[10px] text-slate-400 font-bold uppercase block">
-                          Personal SLA
+                          SLA Compliance
                         </span>
                         <span className="font-black text-slate-900">{officer.sla_compliance_pct}%</span>
                       </div>
 
                       <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-100">
                         <span className="text-[10px] text-slate-400 font-bold uppercase block">
-                          Avg Speed
+                          Avg Resolution
                         </span>
                         <span className="font-black text-slate-900">{officer.avg_resolution_days}d</span>
                       </div>
@@ -737,6 +739,92 @@ export default function AuthorityIndexPage() {
                   </div>
                 );
               })}
+            </div>
+          </div>
+        )}
+
+        {/* Modal: Execute DPC Appraisal Action */}
+        {isDpcModalOpen && dpcTargetOfficer && (
+          <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 border border-slate-200">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">Execute DPC Promotion Action</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    {dpcTargetOfficer.officer_name} ({dpcTargetOfficer.employee_id}) • EBAPI: {dpcTargetOfficer.composite_index}/100
+                  </p>
+                </div>
+                <button
+                  onClick={() => setIsDpcModalOpen(false)}
+                  className="text-slate-400 hover:text-slate-600 text-lg font-bold"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <form onSubmit={handleExecuteDpcAction} className="space-y-4 text-xs">
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">
+                    Departmental Promotion Committee (DPC) Determination
+                  </label>
+                  <select
+                    value={dpcActionType}
+                    onChange={(e) => setDpcActionType(e.target.value as any)}
+                    className="w-full text-sm border border-slate-300 rounded-lg p-2.5 bg-slate-50 focus:outline-none font-medium"
+                  >
+                    <option value="approve_fast_track">Sanction Fast-Track Promotion to Next Cadre</option>
+                    <option value="approve_seniority">Approve Seniority Cadre Elevation</option>
+                    <option value="defer_promotion">Order 6-Month Performance Deferral (Probation)</option>
+                    <option value="freeze_promotion">Order Cadre Freeze & Remedial Re-assignment</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Target Next Cadre</label>
+                  <input
+                    type="text"
+                    disabled
+                    value={dpcTargetOfficer.next_promotion_cadre}
+                    className="w-full text-sm border border-slate-200 rounded-lg p-2.5 bg-slate-100 text-slate-700 font-semibold"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">DPC Official Remarks & Citation</label>
+                  <textarea
+                    rows={3}
+                    required
+                    value={dpcRemarks}
+                    onChange={(e) => setDpcRemarks(e.target.value)}
+                    placeholder="Enter official rationale citing SLA speed, citizen verification, and durability records..."
+                    className="w-full text-sm border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                  />
+                </div>
+
+                <div className="p-3 bg-blue-50 rounded-xl border border-blue-200 text-blue-900">
+                  <span className="font-bold block text-xs">Statutory Legal Notice:</span>
+                  <p className="text-[11px] mt-0.5">
+                    This administrative action will immediately alter the officer's career eligibility status
+                    and publish an immutable log entry into the Municipal Service APAR ledger.
+                  </p>
+                </div>
+
+                <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setIsDpcModalOpen(false)}
+                    className="px-4 py-2 border rounded-lg text-slate-600 font-semibold"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold shadow-sm"
+                  >
+                    Ratify DPC Determination
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         )}

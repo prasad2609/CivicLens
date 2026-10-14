@@ -20,3 +20,17 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Failed to fetch time machine records' }, { status: 500 });
   }
 }
+
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json();
+    const newRecord = serverDb.createTimeMachineRecord(body);
+    return NextResponse.json({ success: true, record: newRecord }, { status: 201 });
+  } catch (error: any) {
+    console.error('Error creating time machine record:', error);
+    return NextResponse.json(
+      { error: error.message || 'Failed to create time machine location record' },
+      { status: 400 }
+    );
+  }
+}

@@ -16,3 +16,16 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Failed to fetch infrastructure assets' }, { status: 500 });
   }
 }
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json();
+    const newAsset = serverDb.createAsset(body);
+    return NextResponse.json({ success: true, asset: newAsset }, { status: 201 });
+  } catch (error: any) {
+    console.error('Error creating asset:', error);
+    return NextResponse.json(
+      { error: error.message || 'Failed to create infrastructure asset' },
+      { status: 400 }
+    );
+  }
+}

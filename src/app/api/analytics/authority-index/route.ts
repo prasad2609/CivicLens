@@ -24,3 +24,17 @@ export async function GET(req: NextRequest) {
     );
   }
 }
+
+export async function POST(req: NextRequest) {
+  try {
+    const { officerId, actionType, remarks } = await req.json();
+    const updated = serverDb.recordOfficerAppraisalAction(officerId, actionType, remarks);
+    return NextResponse.json({ success: true, officer: updated });
+  } catch (error: any) {
+    console.error('Error executing DPC promotion action:', error);
+    return NextResponse.json(
+      { error: error.message || 'Failed to execute DPC promotion action' },
+      { status: 400 }
+    );
+  }
+}

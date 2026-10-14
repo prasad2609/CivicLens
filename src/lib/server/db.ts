@@ -1462,6 +1462,77 @@ class ServerDatabase {
     return asset;
   }
 
+  public createAsset(data: Partial<InfrastructureAsset>): InfrastructureAsset {
+    const s = this.load();
+    const id = data.id || `asset-${data.asset_type || 'infra'}-${Date.now()}`;
+    const codePrefix = data.asset_type === 'road' ? 'RD' : data.asset_type === 'drain' ? 'DR' : data.asset_type === 'water_pipe' ? 'WP' : 'SL';
+    const ward = s.jurisdictions.find((j) => j.id === data.ward_id) || s.jurisdictions[0];
+
+    const newAsset: InfrastructureAsset = {
+      id,
+      asset_code: data.asset_code || `ASSET-${codePrefix}-CHE-${(data.ward_id || '175').replace('ward-', '')}-${Math.floor(10 + Math.random() * 90)}`,
+      name: data.name || 'New Municipal Asset',
+      asset_type: data.asset_type || 'road',
+      ward_id: ward.id,
+      ward_name: ward.name,
+      location_text: data.location_text || `${ward.name} Municipal Beat`,
+      latitude: data.latitude || 12.9815,
+      longitude: data.longitude || 80.2245,
+      commissioned_year: data.commissioned_year || new Date().getFullYear(),
+      expected_lifespan_years: data.expected_lifespan_years || 15,
+      initial_valuation: Number(data.initial_valuation) || 50000000,
+      replacement_cost: Number(data.replacement_cost) || 60000000,
+      cumulative_repair_cost: Number(data.cumulative_repair_cost) || 0,
+      rebuild_threshold_pct: 0,
+      health_score: Number(data.health_score) || 90,
+      fatigue_index: Number(data.fatigue_index) || 0.15,
+      condition: data.condition || 'good',
+      failure_count: 0,
+      mean_time_between_failures_days: 180,
+      days_until_predicted_failure: 150,
+      repair_history: [],
+      related_issue_ids: [],
+      recommendation: {
+        type: 'preventive_monitoring',
+        reason: 'Asset initialized within acceptable municipal baseline.',
+        estimated_rebuild_cost: Number(data.replacement_cost) || 60000000,
+        cumulative_patch_cost: 0,
+        projected_3yr_savings: 0,
+      },
+    };
+
+    if (!s.assets) s.assets = [];
+    s.assets.unshift(newAsset);
+    this.save();
+    return newAsset;
+  }
+
+  public simulateAssetStress(assetId: string): InfrastructureAsset {
+    const s = this.load();
+    const asset = s.assets?.find((a) => a.id === assetId);
+    if (!asset) throw new Error(`Asset not found: ${assetId}`);
+
+    asset.fatigue_index = Math.min(1.0, Number((asset.fatigue_index + 0.12).toFixed(2)));
+    asset.health_score = Math.max(15, asset.health_score - 10);
+    asset.days_until_predicted_failure = Math.max(5, asset.days_until_predicted_failure - 14);
+
+    if (asset.health_score < 40) asset.condition = 'critical';
+    else if (asset.health_score < 60) asset.condition = 'poor';
+    else if (asset.health_score < 75) asset.condition = 'fair';
+
+    if (asset.fatigue_index >= 0.70 || asset.rebuild_threshold_pct >= 50) {
+      asset.recommendation = {
+        type: 'rebuild_recommended',
+        reason: `Environmental stress simulation indicates sub-base saturation and high structural fatigue (${(asset.fatigue_index * 100).toFixed(0)}%). Further spot patches are non-viable.`,
+        estimated_rebuild_cost: asset.replacement_cost,
+        cumulative_patch_cost: asset.cumulative_repair_cost,
+        projected_3yr_savings: Math.round(asset.replacement_cost * 0.35),
+      };
+    }
+    this.save();
+    return asset;
+  }
+
   // ====================================================================
   // 2. CIVIC TIME MACHINE
   // ====================================================================
@@ -1496,6 +1567,66 @@ class ServerDatabase {
       const avg = allScores.reduce((a, b) => a + b, 0) / allScores.length;
       record.durability_rating = Number((avg / 20).toFixed(1));
     }
+    this.save();
+    return record;
+  }
+
+  public createTimeMachineRecord(data: Partial<TimeMachineLocationRecord>): TimeMachineLocationRecord {
+    const s = this.load();
+    const id = data.id || `tm-loc-${Date.now()}`;
+    const ward = s.jurisdictions.find((j) => j.id === data.ward_id) || s.jurisdictions[0];
+
+    const initialSnapshot: TimeMachineSnapshot = {
+      phase: 'before',
+      title: data.snapshots?.[0]?.title || 'Baseline Physical Condition Audit',
+      date: new Date().toISOString().split('T')[0],
+      photo_url: data.snapshots?.[0]?.photo_url || '/images/evidence/velachery-pothole-fixed.jpg',
+      notes: data.snapshots?.[0]?.notes || 'Initial pre-intervention baseline audit registered by municipal inspector.',
+      recorded_by: data.snapshots?.[0]?.recorded_by || 'Field Inspection Team',
+      status_label: 'Registered Baseline',
+      durability_score: 85,
+    };
+
+    const newRecord: TimeMachineLocationRecord = {
+      id,
+      location_title: data.location_title || 'New Monitored Civic Location',
+      ward_id: ward.id,
+      ward_name: ward.name,
+      latitude: data.latitude || 12.9800,
+      longitude: data.longitude || 80.2200,
+      category_name: data.category_name || 'Roads & Infrastructure',
+      inspected_at: data.inspected_at || new Date().toISOString(),
+      related_issue_id: data.related_issue_id,
+      durability_rating: 4.5,
+      durability_verdict: 'Under active temporal durability audit. 30-day and 180-day inspection checkpoints scheduled.',
+      snapshots: data.snapshots && data.snapshots.length > 0 ? data.snapshots : [initialSnapshot],
+    };
+
+    if (!s.timeMachineRecords) s.timeMachineRecords = [];
+    s.timeMachineRecords.unshift(newRecord);
+    this.save();
+    return newRecord;
+  }
+
+  public certifyTimeMachineDurability(recordId: string, certifierName: string = 'Superintending Quality Auditor'): TimeMachineLocationRecord {
+    const s = this.load();
+    const record = s.timeMachineRecords?.find((r) => r.id === recordId);
+    if (!record) throw new Error(`Time Machine record not found: ${recordId}`);
+
+    const certSnapshot: TimeMachineSnapshot = {
+      phase: '180_day_check',
+      title: '180-Day Full Durability Certification Audit',
+      date: new Date().toISOString().split('T')[0],
+      photo_url: record.snapshots[record.snapshots.length - 1]?.photo_url || '/images/evidence/velachery-pothole-fixed.jpg',
+      notes: `Durability certified without defect re-occurrence. Contractor warranty successfully satisfied and released by ${certifierName}.`,
+      recorded_by: certifierName,
+      status_label: 'Audited & Certified',
+      durability_score: 98,
+    };
+
+    record.snapshots.push(certSnapshot);
+    record.durability_rating = 5.0;
+    record.durability_verdict = `Certified 100% Durable: No failure reoccurred during the 180-day audit cycle. Workmanship approved for contractor payment clearance.`;
     this.save();
     return record;
   }
@@ -1621,6 +1752,37 @@ class ServerDatabase {
   public getVolunteerLeaderboard(): VolunteerLeaderboardEntry[] {
     const s = this.load();
     return (s.volunteerLeaderboard || []).sort((a, b) => a.rank - b.rank);
+  }
+
+  public createSwarmMission(data: Partial<VolunteerSwarmMission>): VolunteerSwarmMission {
+    const s = this.load();
+    const id = data.id || `swarm-${Date.now()}`;
+    const ward = s.jurisdictions.find((j) => j.id === data.ward_id) || s.jurisdictions[0];
+
+    const newMission: VolunteerSwarmMission = {
+      id,
+      title: data.title || 'Community Action Swarm',
+      description: data.description || 'Verified citizen self-organization civic mission.',
+      mission_type: (data.mission_type as any) || 'cleanup_drive',
+      ward_id: ward.id,
+      ward_name: ward.name,
+      location_text: data.location_text || `${ward.name} Civic Beat`,
+      latitude: data.latitude || 12.9810,
+      longitude: data.longitude || 80.2220,
+      scheduled_date: data.scheduled_date || new Date(Date.now() + 3 * 24 * 3600 * 1000).toISOString().split('T')[0],
+      target_volunteers: Number(data.target_volunteers) || 15,
+      participants: [],
+      karma_points_reward: Number(data.karma_points_reward) || 50,
+      status: (data.status as any) || 'open',
+      organized_by: data.organized_by || 'CivicLens Volunteer Swarm Network',
+      community_confirmations: 0,
+      proofs: [],
+    };
+
+    if (!s.swarmMissions) s.swarmMissions = [];
+    s.swarmMissions.unshift(newMission);
+    this.save();
+    return newMission;
   }
 
   // ====================================================================
@@ -2007,6 +2169,141 @@ class ServerDatabase {
         'Accelerate citizen resolution verification through community alerts.',
       ],
     };
+  }
+
+  public recordOfficerAppraisalAction(
+    officerId: string,
+    actionType: 'approve_fast_track' | 'approve_seniority' | 'defer_promotion' | 'freeze_promotion',
+    remarks: string
+  ): OfficerPerformanceScorecard {
+    const s = this.load();
+    if (!s.officerScorecards) s.officerScorecards = [...INITIAL_OFFICER_SCORECARDS];
+    const officer = s.officerScorecards.find((o) => o.officer_id === officerId);
+    if (!officer) throw new Error(`Officer not found: ${officerId}`);
+
+    const today = new Date().toISOString().split('T')[0];
+    if (actionType === 'approve_fast_track') {
+      officer.promotion_eligibility = 'Fast-Track Promotion Recommended';
+      officer.performance_tier = 'Exemplary';
+      officer.promotion_readiness_score = 100;
+      officer.merit_points += 250;
+      officer.promotional_milestones.unshift({
+        date: today,
+        title: 'Fast-Track Promotion Order Issued',
+        note: remarks || 'Elevated to next executive cadre by Departmental Promotion Committee',
+        status: 'completed',
+      });
+    } else if (actionType === 'approve_seniority') {
+      officer.promotion_eligibility = 'Eligible for Seniority Promotion';
+      officer.promotion_readiness_score = Math.max(85, officer.promotion_readiness_score);
+      officer.merit_points += 100;
+      officer.promotional_milestones.unshift({
+        date: today,
+        title: 'Seniority Cadre Clearance Approved',
+        note: remarks || 'Roster clearance confirmed for seniority cadre advancement',
+        status: 'completed',
+      });
+    } else if (actionType === 'defer_promotion') {
+      officer.promotion_eligibility = 'Promotion Deferred - Performance Review';
+      officer.performance_tier = 'Needs Improvement';
+      officer.promotional_milestones.unshift({
+        date: today,
+        title: 'Promotion Deferred (6M Review)',
+        note: remarks || 'Assigned to durability monitoring prior to reconsideration',
+        status: 'in_progress',
+      });
+    } else if (actionType === 'freeze_promotion') {
+      officer.promotion_eligibility = 'Promotion Frozen - Under Investigation';
+      officer.performance_tier = 'Unsatisfactory';
+      officer.promotional_milestones.unshift({
+        date: today,
+        title: 'Promotion Frozen / Remediation Ordered',
+        note: remarks || 'Formal remediation ordered due to repetitive quality breaches',
+        status: 'in_progress',
+      });
+    }
+
+    this.save();
+    return officer;
+  }
+
+  public issueContractorPenaltyNotice(
+    clusterKey: string,
+    penaltyAmount: number,
+    reason: string
+  ): { notice_id: string; issued_at: string; penalty_amount: number; status: string } {
+    const s = this.load();
+    const notice_id = `PENALTY-${Date.now().toString().slice(-6)}`;
+    const issued_at = new Date().toISOString();
+
+    this.addAuditLogInternal(s, {
+      action: 'CONTRACTOR_PENALTY_ISSUED',
+      entity_type: 'RECURRING_FAILURE_CLUSTER',
+      entity_id: clusterKey,
+      metadata: { notice_id, penalty_amount: penaltyAmount, reason, status: 'SERVED_TO_CONTRACTOR' },
+    });
+
+    this.save();
+    return { notice_id, issued_at, penalty_amount: penaltyAmount, status: 'SERVED_TO_CONTRACTOR' };
+  }
+
+  public convertClusterToCapitalProject(
+    clusterKey: string,
+    title: string,
+    budget: number,
+    departmentId: string = 'dept-highways'
+  ): PublicProject {
+    const s = this.load();
+    const dept = s.departments.find((d) => d.id === departmentId) || s.departments[0];
+    const newProject: PublicProject = {
+      id: `proj-rebuild-${Date.now()}`,
+      name: title || 'Comprehensive Capital Infrastructure Overhaul',
+      description: `Sanctioned capital replacement project triggered by CivicLens Recurring Failure Intelligence to permanently replace chronic failure cluster (${clusterKey}).`,
+      category: 'Roads & Transportation',
+      location: 'Ward 175 - Velachery Arterial Corridor',
+      agency: dept.name,
+      status: 'approved',
+      start_date: new Date().toISOString().split('T')[0],
+      expected_completion: new Date(Date.now() + 180 * 24 * 3600 * 1000).toISOString().split('T')[0],
+      approved_amount: budget || 9800000,
+      expenditure: 0,
+      funding_source: 'Municipal Capital Infrastructure Fund',
+      demo_data: true,
+      progress_pct: 5,
+      created_at: new Date().toISOString(),
+    };
+
+    if (!s.projects) s.projects = [];
+    s.projects.unshift(newProject);
+    this.save();
+    return newProject;
+  }
+
+  public updateActionItemStatus(
+    wardId: string,
+    itemIndex: number,
+    newStatus: string
+  ): boolean {
+    const s = this.load();
+    const genome = s.genomes?.[wardId];
+    if (genome && genome.policy_prescription && genome.policy_prescription[itemIndex] !== undefined) {
+      const text = genome.policy_prescription[itemIndex].replace(/\s*\[(COMPLETED|IN PROGRESS|PENDING)\]/gi, '');
+      genome.policy_prescription[itemIndex] = `${text} [${newStatus.toUpperCase()}]`;
+      this.save();
+      return true;
+    }
+    return false;
+  }
+
+  public addActionItem(wardId: string, itemText: string): boolean {
+    const s = this.load();
+    const genome = s.genomes?.[wardId];
+    if (genome && genome.policy_prescription) {
+      genome.policy_prescription.push(`${itemText} [PENDING]`);
+      this.save();
+      return true;
+    }
+    return false;
   }
 
   public getNotifications(userId?: string) {

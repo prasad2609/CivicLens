@@ -1347,6 +1347,80 @@ export class CivicDataStore {
     return asset;
   }
 
+  public createAsset(data: Partial<InfrastructureAsset>): InfrastructureAsset {
+    const id = data.id || `asset-${data.asset_type || 'infra'}-${Date.now()}`;
+    const codePrefix = data.asset_type === 'road' ? 'RD' : data.asset_type === 'drain' ? 'DR' : data.asset_type === 'water_pipe' ? 'WP' : 'SL';
+    const ward = this.jurisdictions.find((j) => j.id === data.ward_id) || this.jurisdictions[0];
+
+    const newAsset: InfrastructureAsset = {
+      id,
+      asset_code: data.asset_code || `ASSET-${codePrefix}-CHE-${(data.ward_id || '175').replace('ward-', '')}-${Math.floor(10 + Math.random() * 90)}`,
+      name: data.name || 'New Municipal Asset',
+      asset_type: data.asset_type || 'road',
+      ward_id: ward.id,
+      ward_name: ward.name,
+      location_text: data.location_text || `${ward.name} Municipal Beat`,
+      latitude: data.latitude || 12.9815,
+      longitude: data.longitude || 80.2245,
+      commissioned_year: data.commissioned_year || new Date().getFullYear(),
+      expected_lifespan_years: data.expected_lifespan_years || 15,
+      initial_valuation: Number(data.initial_valuation) || 50000000,
+      replacement_cost: Number(data.replacement_cost) || 60000000,
+      cumulative_repair_cost: Number(data.cumulative_repair_cost) || 0,
+      rebuild_threshold_pct: 0,
+      health_score: Number(data.health_score) || 90,
+      fatigue_index: Number(data.fatigue_index) || 0.15,
+      condition: data.condition || 'good',
+      failure_count: 0,
+      mean_time_between_failures_days: 180,
+      days_until_predicted_failure: 150,
+      repair_history: [],
+      related_issue_ids: [],
+      recommendation: {
+        type: 'preventive_monitoring',
+        reason: 'Asset initialized within acceptable municipal baseline.',
+        estimated_rebuild_cost: Number(data.replacement_cost) || 60000000,
+        cumulative_patch_cost: 0,
+        projected_3yr_savings: 0,
+      },
+    };
+
+    this.assets.unshift(newAsset);
+    this.addAuditLog({
+      action: 'CREATE_INFRASTRUCTURE_ASSET',
+      entity_type: 'ASSET',
+      entity_id: newAsset.id,
+      metadata: { name: newAsset.name, asset_code: newAsset.asset_code },
+    });
+    this.persist();
+    return newAsset;
+  }
+
+  public simulateAssetStress(assetId: string): InfrastructureAsset | null {
+    const asset = this.assets.find((a) => a.id === assetId);
+    if (!asset) return null;
+
+    asset.fatigue_index = Math.min(1.0, Number((asset.fatigue_index + 0.12).toFixed(2)));
+    asset.health_score = Math.max(15, asset.health_score - 10);
+    asset.days_until_predicted_failure = Math.max(5, asset.days_until_predicted_failure - 14);
+
+    if (asset.health_score < 40) asset.condition = 'critical';
+    else if (asset.health_score < 60) asset.condition = 'poor';
+    else if (asset.health_score < 75) asset.condition = 'fair';
+
+    if (asset.fatigue_index >= 0.70 || asset.rebuild_threshold_pct >= 50) {
+      asset.recommendation = {
+        type: 'rebuild_recommended',
+        reason: `Environmental stress simulation indicates sub-base saturation and high structural fatigue (${(asset.fatigue_index * 100).toFixed(0)}%). Further spot patches are non-viable.`,
+        estimated_rebuild_cost: asset.replacement_cost,
+        cumulative_patch_cost: asset.cumulative_repair_cost,
+        projected_3yr_savings: Math.round(asset.replacement_cost * 0.35),
+      };
+    }
+    this.persist();
+    return asset;
+  }
+
   // ====================================================================
   // 2. CIVIC TIME MACHINE
   // ====================================================================
@@ -1377,6 +1451,75 @@ export class CivicDataStore {
       const avg = allScores.reduce((a, b) => a + b, 0) / allScores.length;
       record.durability_rating = Number((avg / 20).toFixed(1));
     }
+    this.persist();
+    return record;
+  }
+
+  public createTimeMachineRecord(data: Partial<TimeMachineLocationRecord>): TimeMachineLocationRecord {
+    const id = data.id || `tm-loc-${Date.now()}`;
+    const ward = this.jurisdictions.find((j) => j.id === data.ward_id) || this.jurisdictions[0];
+
+    const initialSnapshot: TimeMachineSnapshot = {
+      phase: 'before',
+      title: data.snapshots?.[0]?.title || 'Baseline Physical Condition Audit',
+      date: new Date().toISOString().split('T')[0],
+      photo_url: data.snapshots?.[0]?.photo_url || '/images/evidence/velachery-pothole-fixed.jpg',
+      notes: data.snapshots?.[0]?.notes || 'Initial pre-intervention baseline audit registered by municipal inspector.',
+      recorded_by: data.snapshots?.[0]?.recorded_by || this.currentUser.full_name,
+      status_label: 'Registered Baseline',
+      durability_score: 85,
+    };
+
+    const newRecord: TimeMachineLocationRecord = {
+      id,
+      location_title: data.location_title || 'New Monitored Civic Location',
+      ward_id: ward.id,
+      ward_name: ward.name,
+      latitude: data.latitude || 12.9800,
+      longitude: data.longitude || 80.2200,
+      category_name: data.category_name || 'Roads & Infrastructure',
+      inspected_at: data.inspected_at || new Date().toISOString(),
+      related_issue_id: data.related_issue_id,
+      durability_rating: 4.5,
+      durability_verdict: 'Under active temporal durability audit. 30-day and 180-day inspection checkpoints scheduled.',
+      snapshots: data.snapshots && data.snapshots.length > 0 ? data.snapshots : [initialSnapshot],
+    };
+
+    this.timeMachineRecords.unshift(newRecord);
+    this.addAuditLog({
+      action: 'CREATE_TIMEMACHINE_RECORD',
+      entity_type: 'TIME_MACHINE',
+      entity_id: newRecord.id,
+      metadata: { location: newRecord.location_title },
+    });
+    this.persist();
+    return newRecord;
+  }
+
+  public certifyTimeMachineDurability(recordId: string, certifierName?: string): TimeMachineLocationRecord | null {
+    const record = this.timeMachineRecords.find((r) => r.id === recordId);
+    if (!record) return null;
+
+    const certSnapshot: TimeMachineSnapshot = {
+      phase: '180_day_check',
+      title: '180-Day Full Durability Certification Audit',
+      date: new Date().toISOString().split('T')[0],
+      photo_url: record.snapshots[record.snapshots.length - 1]?.photo_url || '/images/evidence/velachery-pothole-fixed.jpg',
+      notes: `Durability certified without defect re-occurrence. Contractor warranty successfully satisfied and released by ${certifierName || this.currentUser.full_name}.`,
+      recorded_by: certifierName || this.currentUser.full_name,
+      status_label: 'Audited & Certified',
+      durability_score: 98,
+    };
+
+    record.snapshots.push(certSnapshot);
+    record.durability_rating = 5.0;
+    record.durability_verdict = `Certified 100% Durable: No failure reoccurred during the 180-day audit cycle. Workmanship approved for contractor payment clearance.`;
+    this.addAuditLog({
+      action: 'CERTIFY_DURABILITY',
+      entity_type: 'TIME_MACHINE',
+      entity_id: record.id,
+      metadata: { verdict: record.durability_verdict },
+    });
     this.persist();
     return record;
   }
@@ -1520,6 +1663,49 @@ export class CivicDataStore {
 
   public getVolunteerLeaderboard(): VolunteerLeaderboardEntry[] {
     return [...this.volunteerLeaderboard].sort((a, b) => a.rank - b.rank);
+  }
+
+  public createSwarmMission(data: Partial<VolunteerSwarmMission>): VolunteerSwarmMission {
+    const id = data.id || `swarm-${Date.now()}`;
+    const ward = this.jurisdictions.find((j) => j.id === data.ward_id) || this.jurisdictions[0];
+
+    const newMission: VolunteerSwarmMission = {
+      id,
+      title: data.title || 'Community Action Swarm',
+      description: data.description || 'Verified citizen self-organization civic mission.',
+      mission_type: (data.mission_type as any) || 'cleanup_drive',
+      ward_id: ward.id,
+      ward_name: ward.name,
+      location_text: data.location_text || `${ward.name} Civic Beat`,
+      latitude: data.latitude || 12.9810,
+      longitude: data.longitude || 80.2220,
+      scheduled_date: data.scheduled_date || new Date(Date.now() + 3 * 24 * 3600 * 1000).toISOString().split('T')[0],
+      target_volunteers: Number(data.target_volunteers) || 15,
+      participants: [],
+      karma_points_reward: Number(data.karma_points_reward) || 50,
+      status: (data.status as any) || 'open',
+      organized_by: data.organized_by || 'CivicLens Volunteer Swarm Network',
+      community_confirmations: 0,
+      proofs: [],
+    };
+
+    this.swarmMissions.unshift(newMission);
+    this.addAuditLog({
+      action: 'CREATE_SWARM_MISSION',
+      entity_type: 'SWARM_MISSION',
+      entity_id: newMission.id,
+      metadata: { title: newMission.title, type: newMission.mission_type },
+    });
+    this.persist();
+
+    if (typeof window !== 'undefined') {
+      fetch('/api/swarm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newMission),
+      }).catch(() => {});
+    }
+    return newMission;
   }
 
   // ====================================================================
@@ -1882,6 +2068,219 @@ export class CivicDataStore {
         'Accelerate citizen resolution verification through community alerts.',
       ],
     };
+  }
+
+  public recordOfficerAppraisalAction(
+    officerId: string,
+    actionType: 'approve_fast_track' | 'approve_seniority' | 'defer_promotion' | 'freeze_promotion',
+    remarks: string
+  ): OfficerPerformanceScorecard | null {
+    if (!this.officerScorecards) this.officerScorecards = [...INITIAL_OFFICER_SCORECARDS];
+    const officer = this.officerScorecards.find((o) => o.officer_id === officerId);
+    if (!officer) return null;
+
+    const today = new Date().toISOString().split('T')[0];
+    if (actionType === 'approve_fast_track') {
+      officer.promotion_eligibility = 'Fast-Track Promotion Recommended';
+      officer.performance_tier = 'Exemplary';
+      officer.promotion_readiness_score = 100;
+      officer.merit_points += 250;
+      officer.promotional_milestones.unshift({
+        date: today,
+        title: 'Fast-Track Promotion Order Issued',
+        note: remarks || 'Elevated to next executive cadre by Departmental Promotion Committee',
+        status: 'completed',
+      });
+    } else if (actionType === 'approve_seniority') {
+      officer.promotion_eligibility = 'Eligible for Seniority Promotion';
+      officer.promotion_readiness_score = Math.max(85, officer.promotion_readiness_score);
+      officer.merit_points += 100;
+      officer.promotional_milestones.unshift({
+        date: today,
+        title: 'Seniority Cadre Clearance Approved',
+        note: remarks || 'Roster clearance confirmed for seniority cadre advancement',
+        status: 'completed',
+      });
+    } else if (actionType === 'defer_promotion') {
+      officer.promotion_eligibility = 'Promotion Deferred - Performance Review';
+      officer.performance_tier = 'Needs Improvement';
+      officer.promotional_milestones.unshift({
+        date: today,
+        title: 'Promotion Deferred (6M Review)',
+        note: remarks || 'Assigned to durability monitoring prior to reconsideration',
+        status: 'in_progress',
+      });
+    } else if (actionType === 'freeze_promotion') {
+      officer.promotion_eligibility = 'Promotion Frozen - Under Investigation';
+      officer.performance_tier = 'Unsatisfactory';
+      officer.promotional_milestones.unshift({
+        date: today,
+        title: 'Promotion Frozen / Remediation Ordered',
+        note: remarks || 'Formal remediation ordered due to repetitive quality breaches',
+        status: 'in_progress',
+      });
+    }
+
+    this.addAuditLog({
+      action: 'OFFICER_PROMOTION_APPRAISAL_ACTION',
+      entity_type: 'OFFICER_SCORECARD',
+      entity_id: officer.officer_id,
+      metadata: { officer_name: officer.officer_name, actionType, remarks },
+    });
+    this.persist();
+
+    if (typeof window !== 'undefined') {
+      fetch('/api/analytics/authority-index', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ officerId, actionType, remarks }),
+      }).catch(() => {});
+    }
+    return officer;
+  }
+
+  public issueContractorPenaltyNotice(
+    clusterKey: string,
+    penaltyAmount: number,
+    reason: string
+  ): { notice_id: string; issued_at: string; penalty_amount: number; status: string } {
+    const notice_id = `PENALTY-${Date.now().toString().slice(-6)}`;
+    const issued_at = new Date().toISOString();
+
+    this.addAuditLog({
+      action: 'CONTRACTOR_PENALTY_ISSUED',
+      entity_type: 'RECURRING_FAILURE_CLUSTER',
+      entity_id: clusterKey,
+      metadata: { notice_id, penalty_amount: penaltyAmount, reason, status: 'SERVED_TO_CONTRACTOR' },
+    });
+    this.addNotification({
+      user_id: this.currentUser?.id || 'all',
+      title: 'Contractor Warranty Penalty Issued',
+      message: `Penalty notice ${notice_id} for ₹${(penaltyAmount / 100000).toFixed(1)}L issued for chronic failure at cluster ${clusterKey}.`,
+    });
+    this.persist();
+
+    if (typeof window !== 'undefined') {
+      fetch('/api/analytics/recurring', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'issue_penalty', clusterKey, penaltyAmount, reason }),
+      }).catch(() => {});
+    }
+    return { notice_id, issued_at, penalty_amount: penaltyAmount, status: 'SERVED_TO_CONTRACTOR' };
+  }
+
+  public convertClusterToCapitalProject(
+    clusterKey: string,
+    title: string,
+    budget: number,
+    departmentId: string = 'dept-highways'
+  ): PublicProject {
+    const dept = this.departments.find((d) => d.id === departmentId) || this.departments[0];
+    const newProject: PublicProject = {
+      id: `proj-rebuild-${Date.now()}`,
+      name: title || 'Comprehensive Capital Infrastructure Overhaul',
+      description: `Sanctioned capital replacement project triggered by CivicLens Recurring Failure Intelligence to permanently replace chronic failure cluster (${clusterKey}).`,
+      category: 'Roads & Transportation',
+      location: 'Ward 175 - Velachery Arterial Corridor',
+      agency: dept.name,
+      status: 'approved',
+      start_date: new Date().toISOString().split('T')[0],
+      expected_completion: new Date(Date.now() + 180 * 24 * 3600 * 1000).toISOString().split('T')[0],
+      approved_amount: budget || 9800000,
+      expenditure: 0,
+      funding_source: 'Municipal Capital Infrastructure Fund',
+      demo_data: true,
+      progress_pct: 5,
+      created_at: new Date().toISOString(),
+    };
+
+    this.projects.unshift(newProject);
+    this.addAuditLog({
+      action: 'SANCTION_CAPITAL_PROJECT_FROM_RECURRING',
+      entity_type: 'PROJECT',
+      entity_id: newProject.id,
+      metadata: { clusterKey, name: newProject.name, budget },
+    });
+    this.persist();
+
+    if (typeof window !== 'undefined') {
+      fetch('/api/analytics/recurring', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'convert_to_project', clusterKey, title, budget, departmentId }),
+      }).catch(() => {});
+    }
+    return newProject;
+  }
+
+  public updateActionItemStatus(
+    wardId: string,
+    itemIndex: number,
+    newStatus: string
+  ): boolean {
+    const genome = this.genomes[wardId];
+    if (genome && genome.policy_prescription && genome.policy_prescription[itemIndex] !== undefined) {
+      const text = genome.policy_prescription[itemIndex].replace(/\s*\[(COMPLETED|IN PROGRESS|PENDING)\]/gi, '');
+      genome.policy_prescription[itemIndex] = `${text} [${newStatus.toUpperCase()}]`;
+      this.persist();
+
+      if (typeof window !== 'undefined') {
+        fetch('/api/analytics/pulse', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'update_status', wardId, itemIndex, newStatus }),
+        }).catch(() => {});
+      }
+      return true;
+    }
+    return false;
+  }
+
+  public addActionItem(wardId: string, itemText: string): boolean {
+    const genome = this.genomes[wardId];
+    if (genome && genome.policy_prescription) {
+      genome.policy_prescription.push(`${itemText} [PENDING]`);
+      this.persist();
+
+      if (typeof window !== 'undefined') {
+        fetch('/api/analytics/pulse', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'add_item', wardId, itemText }),
+        }).catch(() => {});
+      }
+      return true;
+    }
+    return false;
+  }
+
+  public simulateGenomicReform(wardId: string, deltas: Record<string, number>): ConstituencyGenome | null {
+    const genome = this.genomes[wardId];
+    if (!genome) return null;
+
+    const cloned = JSON.parse(JSON.stringify(genome)) as ConstituencyGenome;
+    let sumScores = 0;
+    let count = 0;
+
+    Object.keys(cloned.traits).forEach((key) => {
+      const delta = deltas[key] || 0;
+      const trait = cloned.traits[key as keyof typeof cloned.traits];
+      trait.score = Math.min(100, Math.max(10, trait.score + delta));
+      if (delta > 0) trait.trend = 'improving';
+      else if (delta < 0) trait.trend = 'declining';
+      sumScores += trait.score;
+      count += 1;
+    });
+
+    cloned.overall_governance_score = Number((sumScores / Math.max(1, count)).toFixed(1));
+    if (cloned.overall_governance_score >= 90) cloned.governance_grade = 'A+';
+    else if (cloned.overall_governance_score >= 80) cloned.governance_grade = 'A';
+    else if (cloned.overall_governance_score >= 70) cloned.governance_grade = 'B+';
+    else if (cloned.overall_governance_score >= 60) cloned.governance_grade = 'B';
+    else cloned.governance_grade = 'C';
+
+    return cloned;
   }
 
   public resetToDemoSeed() {
