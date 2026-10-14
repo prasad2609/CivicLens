@@ -75,6 +75,7 @@ export default function DashboardPage() {
       setAuditLogs(civicStore.getAuditLogs());
     };
     update();
+    civicStore.syncWithServer();
     const unsub = civicStore.subscribe(update);
     return unsub;
   }, []);

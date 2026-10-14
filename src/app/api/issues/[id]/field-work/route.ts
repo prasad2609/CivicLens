@@ -6,6 +6,7 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
+    await serverDb.ensureHydrated();
     const body = await req.json();
     const { notes, photoDataUrl, isCompleted, workerId } = body;
 
@@ -17,7 +18,7 @@ export async function POST(
     }
 
     const worker = workerId ? serverDb.findUserById(workerId) : undefined;
-    const updated = serverDb.submitFieldWork(
+    const updated = await serverDb.submitFieldWork(
       params.id,
       notes,
       photoDataUrl,

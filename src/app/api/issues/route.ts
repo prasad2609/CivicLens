@@ -29,6 +29,7 @@ export async function GET(req: NextRequest) {
       search: searchParams.get('search') || undefined,
     };
 
+    await serverDb.ensureHydrated();
     const issues = serverDb.getIssues(filters);
     return NextResponse.json({ issues, total: issues.length });
   } catch (err: any) {
@@ -38,6 +39,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    await serverDb.ensureHydrated();
     const body = await req.json();
     const title = body.title;
     const description = body.description;
@@ -79,7 +81,7 @@ export async function POST(req: NextRequest) {
       citizen = serverDb.findUserByEmail('citizen@civiclens.gov') || null;
     }
 
-    const newIssue = serverDb.createIssue(
+    const newIssue = await serverDb.createIssue(
       {
         title,
         description,

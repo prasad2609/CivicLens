@@ -23,8 +23,8 @@ export async function POST(req: Request) {
         body.reason
       );
       return NextResponse.json({ success: true, ...res });
-    } else if (body.action === 'convert_to_project') {
-      const newProj = serverDb.convertClusterToCapitalProject(
+    } else if (body.action === 'convert_to_project' || body.action === 'sanction_project') {
+      const newProj = await serverDb.convertClusterToCapitalProject(
         body.clusterKey,
         body.title,
         body.budget,

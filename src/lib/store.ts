@@ -211,13 +211,31 @@ export class CivicDataStore {
   public async syncWithServer() {
     if (typeof window === 'undefined') return;
     try {
-      const res = await fetch('/api/issues');
-      if (res.ok) {
-        const data = await res.json();
+      const [issuesRes, projectsRes] = await Promise.allSettled([
+        fetch('/api/issues'),
+        fetch('/api/projects'),
+      ]);
+
+      let changed = false;
+      if (issuesRes.status === 'fulfilled' && issuesRes.value.ok) {
+        const data = await issuesRes.value.json();
         if (data.issues && data.issues.length > 0) {
           this.issues = data.issues;
-          this.persist();
+          changed = true;
         }
+      }
+
+      if (projectsRes.status === 'fulfilled' && projectsRes.value.ok) {
+        const data = await projectsRes.value.json();
+        if (data.projects && data.projects.length > 0) {
+          this.projects = data.projects;
+          changed = true;
+        }
+      }
+
+      if (changed) {
+        this.persist();
+        this.notify();
       }
     } catch {
       // Offline / fallback mode
@@ -610,6 +628,18 @@ export class CivicDataStore {
     }
 
     return newIssue;
+  }
+
+  public addOrUpdateIssue(issue: CivicIssue): void {
+    const idx = this.issues.findIndex(
+      (i) => i.id === issue.id || i.complaint_code.toLowerCase() === issue.complaint_code.toLowerCase()
+    );
+    if (idx >= 0) {
+      this.issues[idx] = { ...this.issues[idx], ...issue };
+    } else {
+      this.issues.unshift(issue);
+    }
+    this.persist();
   }
 
   // Update Status / Workflow Transitions

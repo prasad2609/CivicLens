@@ -6,6 +6,7 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
+    await serverDb.ensureHydrated();
     const body = await req.json();
     const { officialNote, proofPhotoUrl, officerId } = body;
 
@@ -17,7 +18,7 @@ export async function POST(
     }
 
     const officer = officerId ? serverDb.findUserById(officerId) : undefined;
-    const updated = serverDb.updateIssueStatus(
+    const updated = await serverDb.updateIssueStatus(
       params.id,
       'resolved',
       officialNote,

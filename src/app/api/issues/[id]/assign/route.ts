@@ -6,6 +6,7 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
+    await serverDb.ensureHydrated();
     const body = await req.json();
     const workerId = body.workerId || body.fieldWorkerId;
     const { note, officerId } = body;
@@ -18,7 +19,7 @@ export async function POST(
     }
 
     const officer = officerId ? serverDb.findUserById(officerId) : undefined;
-    const updated = serverDb.assignFieldWorker(params.id, workerId, note, officer);
+    const updated = await serverDb.assignFieldWorker(params.id, workerId, note, officer);
 
     return NextResponse.json({
       success: true,

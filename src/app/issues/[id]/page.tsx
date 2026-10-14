@@ -57,16 +57,41 @@ export default function IssueDetailPage() {
   const [activeTab, setActiveTab] = useState<'timeline' | 'evidence' | 'map'>('timeline');
 
   useEffect(() => {
-    const update = () => {
-      const found = civicStore.getIssueById(idOrCode);
-      setIssue(found ? { ...found } : undefined);
-      setCurrentUser(civicStore.getCurrentUser());
-      setLoading(false);
+    let isMounted = true;
+    const update = async () => {
+      let found = civicStore.getIssueById(idOrCode);
+      if (!found) {
+        try {
+          const res = await fetch(`/api/issues/${encodeURIComponent(idOrCode)}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.issue) {
+              civicStore.addOrUpdateIssue(data.issue);
+              found = data.issue;
+            }
+          }
+        } catch (e) {
+          console.warn('Could not fetch issue from server:', e);
+        }
+      }
+      if (isMounted) {
+        setIssue(found ? { ...found } : undefined);
+        setCurrentUser(civicStore.getCurrentUser());
+        setLoading(false);
+      }
     };
 
     update();
-    const unsub = civicStore.subscribe(update);
-    return unsub;
+    const unsub = civicStore.subscribe(() => {
+      const found = civicStore.getIssueById(idOrCode);
+      if (found && isMounted) {
+        setIssue({ ...found });
+      }
+    });
+    return () => {
+      isMounted = false;
+      unsub();
+    };
   }, [idOrCode]);
 
   if (loading) {
@@ -101,32 +126,134 @@ export default function IssueDetailPage() {
   }
 
   // Handlers for modal actions
-  const handleVerifySubmit = (
+  const handleVerifySubmit = async (
     result: VerificationResult,
     comment: string,
     photoDataUrl?: string
   ) => {
     civicStore.verifyResolution(issue.id, result, comment, photoDataUrl);
+    try {
+      const res = await fetch(`/api/issues/${issue.id}/verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          citizenId: currentUser?.id,
+          result,
+          comment,
+          newEvidenceUrl: photoDataUrl,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.issue) {
+          civicStore.addOrUpdateIssue(data.issue);
+          setIssue({ ...data.issue });
+        }
+      }
+    } catch (e) {
+      console.warn('API verify fallback:', e);
+    }
   };
 
-  const handleEscalateSubmit = (reason: string, details: string) => {
+  const handleEscalateSubmit = async (reason: string, details: string) => {
     civicStore.escalateComplaint(issue.id, reason, details);
+    try {
+      const res = await fetch(`/api/issues/${issue.id}/escalate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          reason,
+          details,
+          citizenId: currentUser?.id,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.issue) {
+          civicStore.addOrUpdateIssue(data.issue);
+          setIssue({ ...data.issue });
+        }
+      }
+    } catch (e) {
+      console.warn('API escalate fallback:', e);
+    }
   };
 
-  const handleAssignWorker = (workerId: string, note: string) => {
+  const handleAssignWorker = async (workerId: string, note: string) => {
     civicStore.assignFieldWorker(issue.id, workerId, note);
+    try {
+      const res = await fetch(`/api/issues/${issue.id}/assign`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          workerId,
+          note,
+          officerId: currentUser?.id,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.issue) {
+          civicStore.addOrUpdateIssue(data.issue);
+          setIssue({ ...data.issue });
+        }
+      }
+    } catch (e) {
+      console.warn('API assign fallback:', e);
+    }
   };
 
-  const handleResolveSubmit = (officialNote: string, proofPhotoUrl?: string) => {
+  const handleResolveSubmit = async (officialNote: string, proofPhotoUrl?: string) => {
     civicStore.markOfficerResolved(issue.id, officialNote, proofPhotoUrl);
+    try {
+      const res = await fetch(`/api/issues/${issue.id}/resolve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          officialNote,
+          proofPhotoUrl,
+          officerId: currentUser?.id,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.issue) {
+          civicStore.addOrUpdateIssue(data.issue);
+          setIssue({ ...data.issue });
+        }
+      }
+    } catch (e) {
+      console.warn('API resolve fallback:', e);
+    }
   };
 
-  const handleFieldWorkSubmit = (
+  const handleFieldWorkSubmit = async (
     notes: string,
     photoDataUrl?: string,
     isCompleted?: boolean
   ) => {
     civicStore.submitFieldWork(issue.id, notes, photoDataUrl, isCompleted);
+    try {
+      const res = await fetch(`/api/issues/${issue.id}/field-work`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          workerId: currentUser?.id,
+          notes,
+          photoDataUrl,
+          isCompleted,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.issue) {
+          civicStore.addOrUpdateIssue(data.issue);
+          setIssue({ ...data.issue });
+        }
+      }
+    } catch (e) {
+      console.warn('API field work fallback:', e);
+    }
   };
 
   const handleCommunityVouch = async () => {

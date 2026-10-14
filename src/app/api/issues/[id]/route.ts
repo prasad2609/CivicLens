@@ -7,6 +7,7 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
+    await serverDb.ensureHydrated();
     const issue = serverDb.getIssueById(params.id);
     if (!issue) {
       return NextResponse.json({ error: 'Complaint record not found.' }, { status: 404 });
@@ -22,11 +23,12 @@ export async function PATCH(
   { params }: { params: { id: string } }
 ) {
   try {
+    await serverDb.ensureHydrated();
     const body = await req.json();
     const { status, note, evidenceUrl, actorId } = body;
 
     const actor = actorId ? serverDb.findUserById(actorId) : undefined;
-    const updated = serverDb.updateIssueStatus(
+    const updated = await serverDb.updateIssueStatus(
       params.id,
       status as IssueStatus,
       note,

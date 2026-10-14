@@ -3,6 +3,7 @@ import { serverDb } from '@/lib/server/db';
 
 export async function GET() {
   try {
+    await serverDb.ensureHydrated();
     const projects = serverDb.getProjects();
     return NextResponse.json({ projects, total: projects.length });
   } catch (err: any) {

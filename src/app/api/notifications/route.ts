@@ -3,6 +3,7 @@ import { serverDb } from '@/lib/server/db';
 
 export async function GET(req: NextRequest) {
   try {
+    await serverDb.ensureHydrated();
     const { searchParams } = new URL(req.url);
     const userId = searchParams.get('userId') || undefined;
     const notifications = serverDb.getNotifications(userId);

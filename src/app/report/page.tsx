@@ -503,7 +503,7 @@ export default function ReportIssuePage() {
   };
 
   // Submission
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (authenticityResult?.is_ai_generated) {
@@ -516,8 +516,42 @@ export default function ReportIssuePage() {
 
     setIsSubmitting(true);
 
-    setTimeout(() => {
-      const issue = civicStore.createIssue({
+    try {
+      const payload = {
+        title,
+        description,
+        categoryId: selectedCategoryId,
+        severity,
+        latitude: coords[0],
+        longitude: coords[1],
+        locationText: locationText || `${currentJurisdiction?.name}, Chennai`,
+        jurisdictionId: selectedJurisdictionId,
+        photoDataUrl: photoDataUrl || undefined,
+        photoCaption: photoCaption || undefined,
+        authenticity: authenticityResult || undefined,
+        citizenId: civicStore.getCurrentUser()?.id,
+      };
+
+      const res = await fetch('/api/issues', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || `Server responded with ${res.status}`);
+      }
+
+      const data = await res.json();
+      const created = data.issue;
+
+      civicStore.addOrUpdateIssue(created);
+      setSubmittedIssue(created);
+      setStep(7); // Success Step
+    } catch (err: any) {
+      console.warn('Direct API submission notice:', err.message, '- falling back to store persistence');
+      const fallback = civicStore.createIssue({
         title,
         description,
         categoryId: selectedCategoryId,
@@ -530,11 +564,11 @@ export default function ReportIssuePage() {
         photoCaption: photoCaption || undefined,
         authenticity: authenticityResult || undefined,
       });
-
-      setSubmittedIssue(issue);
+      setSubmittedIssue(fallback);
+      setStep(7);
+    } finally {
       setIsSubmitting(false);
-      setStep(7); // Success Step
-    }, 600);
+    }
   };
 
   const handleCopyCode = () => {

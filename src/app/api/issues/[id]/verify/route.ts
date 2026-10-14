@@ -7,6 +7,7 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
+    await serverDb.ensureHydrated();
     const body = await req.json();
     const { result, comment, newEvidenceUrl, citizenId } = body;
 
@@ -18,7 +19,7 @@ export async function POST(
     }
 
     const citizen = citizenId ? serverDb.findUserById(citizenId) : undefined;
-    const updated = serverDb.verifyResolution(
+    const updated = await serverDb.verifyResolution(
       params.id,
       result as VerificationResult,
       comment || '',

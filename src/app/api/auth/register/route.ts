@@ -3,6 +3,7 @@ import { serverDb } from '@/lib/server/db';
 
 export async function POST(req: NextRequest) {
   try {
+    await serverDb.ensureHydrated();
     const body = await req.json();
     const { full_name, email, password, phone, role, preferred_language, area } = body;
 
@@ -13,7 +14,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const newUser = serverDb.createUser({
+    const newUser = await serverDb.createUser({
       full_name,
       email,
       password: password || 'civiclens123',

@@ -38,6 +38,7 @@ export default function IssuesExplorerPage() {
       setIssues(civicStore.getIssues());
     };
     update();
+    civicStore.syncWithServer();
     const unsub = civicStore.subscribe(update);
     return unsub;
   }, []);

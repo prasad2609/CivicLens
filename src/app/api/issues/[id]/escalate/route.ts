@@ -6,6 +6,7 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
+    await serverDb.ensureHydrated();
     const body = await req.json();
     const { reason, details, citizenId } = body;
 
@@ -17,7 +18,7 @@ export async function POST(
     }
 
     const citizen = citizenId ? serverDb.findUserById(citizenId) : undefined;
-    const updated = serverDb.escalateIssue(params.id, reason, details, citizen);
+    const updated = await serverDb.escalateIssue(params.id, reason, details, citizen);
 
     return NextResponse.json({
       success: true,

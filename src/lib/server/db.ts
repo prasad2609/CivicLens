@@ -93,11 +93,13 @@ export function calculateDistanceMeters(
 class ServerDatabase {
   private static instance: ServerDatabase;
   private state: DatabaseState | null = null;
+  private isHydrated = false;
+  private hydrationPromise: Promise<void> | null = null;
 
   private constructor() {
     this.load();
     if (isPgConfigured) {
-      this.hydrateFromSupabase().catch((err) => {
+      this.ensureHydrated().catch((err) => {
         console.warn('Initial Supabase hydration notice:', err.message);
       });
     }
@@ -108,6 +110,24 @@ class ServerDatabase {
       ServerDatabase.instance = new ServerDatabase();
     }
     return ServerDatabase.instance;
+  }
+
+  public async ensureHydrated(): Promise<void> {
+    if (!isPgConfigured) return;
+    if (this.isHydrated) return;
+    if (!this.hydrationPromise) {
+      this.hydrationPromise = this.hydrateFromSupabase()
+        .then(() => {
+          this.isHydrated = true;
+        })
+        .catch((err) => {
+          console.warn('Supabase hydration warning:', err.message);
+        })
+        .finally(() => {
+          this.hydrationPromise = null;
+        });
+    }
+    await this.hydrationPromise;
   }
 
   private load(): DatabaseState {
@@ -298,8 +318,192 @@ class ServerDatabase {
           ]
         );
       }
-    } catch (e) {
-      console.error('Background sync to Supabase failed:', e);
+
+      if (issue.escalations && Array.isArray(issue.escalations)) {
+        for (const esc of issue.escalations) {
+          await queryPg(
+            `INSERT INTO escalations (id, escalation_code, issue_id, raised_by, reason, details, status, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+             ON CONFLICT (id) DO UPDATE SET status = EXCLUDED.status, details = EXCLUDED.details;`,
+            [
+              esc.id,
+              esc.escalation_code,
+              issue.id,
+              esc.raised_by || issue.citizen_id,
+              esc.reason,
+              esc.details || null,
+              esc.status || 'pending_review',
+              esc.created_at || new Date().toISOString(),
+            ]
+          );
+        }
+      }
+
+      if (issue.assigned_field_worker_id || issue.assigned_officer_id) {
+        const assignmentId = `asgn-${issue.id}`;
+        await queryPg(
+          `INSERT INTO assignments (id, issue_id, officer_id, field_worker_id, status, assigned_at)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           ON CONFLICT (id) DO UPDATE SET
+             officer_id = EXCLUDED.officer_id,
+             field_worker_id = EXCLUDED.field_worker_id,
+             status = EXCLUDED.status;`,
+          [
+            assignmentId,
+            issue.id,
+            issue.assigned_officer_id || null,
+            issue.assigned_field_worker_id || null,
+            issue.status === 'resolved' || issue.status === 'closed' ? 'completed' : 'active',
+            issue.updated_at || issue.created_at || new Date().toISOString(),
+          ]
+        );
+      }
+    } catch (e: any) {
+      console.error('Supabase syncIssueToSupabase error:', e);
+      throw e;
+    }
+  }
+
+  public async syncUserToSupabase(user: UserProfile & { password_hash?: string }): Promise<void> {
+    if (!isPgConfigured) return;
+    try {
+      const existing = await queryPg('SELECT id FROM profiles WHERE email = $1 LIMIT 1', [user.email]);
+      if (existing && existing.length > 0) {
+        await queryPg(
+          `UPDATE profiles SET
+             full_name = $1, phone = $2, role = $3, department_id = $4,
+             preferred_language = $5, area = $6, password_hash = COALESCE($7, password_hash),
+             updated_at = $8
+           WHERE email = $9;`,
+          [
+            user.full_name,
+            user.phone || null,
+            user.role || 'citizen',
+            user.department_id || null,
+            user.preferred_language || 'en',
+            user.area || null,
+            user.password_hash || 'civiclens123',
+            new Date().toISOString(),
+            user.email,
+          ]
+        );
+      } else {
+        await queryPg(
+          `INSERT INTO profiles (
+             id, full_name, email, phone, role, department_id,
+             preferred_language, area, password_hash, created_at, updated_at
+           )
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+           ON CONFLICT (id) DO UPDATE SET
+             full_name = EXCLUDED.full_name,
+             phone = EXCLUDED.phone,
+             role = EXCLUDED.role,
+             department_id = EXCLUDED.department_id,
+             preferred_language = EXCLUDED.preferred_language,
+             area = EXCLUDED.area,
+             password_hash = COALESCE(EXCLUDED.password_hash, profiles.password_hash),
+             updated_at = EXCLUDED.updated_at;`,
+          [
+            user.id,
+            user.full_name,
+            user.email,
+            user.phone || null,
+            user.role || 'citizen',
+            user.department_id || null,
+            user.preferred_language || 'en',
+            user.area || null,
+            user.password_hash || 'civiclens123',
+            user.created_at || new Date().toISOString(),
+            user.updated_at || new Date().toISOString(),
+          ]
+        );
+      }
+    } catch (e: any) {
+      console.error('Supabase syncUserToSupabase error:', e);
+    }
+  }
+
+  public async syncProjectToSupabase(project: PublicProject): Promise<void> {
+    if (!isPgConfigured) return;
+    try {
+      await queryPg(
+        `INSERT INTO projects (
+           id, name, description, category, location, agency, status,
+           start_date, expected_completion, approved_amount, expenditure,
+           funding_source, source_reference, demo_data, created_at, updated_at
+         )
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+         ON CONFLICT (id) DO UPDATE SET
+           status = EXCLUDED.status,
+           expenditure = EXCLUDED.expenditure,
+           updated_at = EXCLUDED.updated_at;`,
+        [
+          project.id,
+          project.name,
+          project.description || '',
+          project.category,
+          project.location,
+          project.agency,
+          project.status || 'in_progress',
+          project.start_date,
+          project.expected_completion,
+          project.approved_amount,
+          project.expenditure || 0,
+          project.funding_source || 'Constituency Capital Fund',
+          project.source_reference || null,
+          Boolean(project.demo_data),
+          project.created_at || new Date().toISOString(),
+          project.updated_at || project.created_at || new Date().toISOString(),
+        ]
+      );
+    } catch (e: any) {
+      console.error('Supabase syncProjectToSupabase error:', e);
+    }
+  }
+
+  public async syncNotificationToSupabase(notif: AppNotification): Promise<void> {
+    if (!isPgConfigured) return;
+    try {
+      await queryPg(
+        `INSERT INTO notifications (id, user_id, title, message, related_issue_id, is_read, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         ON CONFLICT (id) DO UPDATE SET is_read = EXCLUDED.is_read;`,
+        [
+          notif.id,
+          notif.user_id,
+          notif.title,
+          notif.message,
+          notif.related_issue_id || null,
+          Boolean(notif.is_read),
+          notif.created_at || new Date().toISOString(),
+        ]
+      );
+    } catch (e: any) {
+      console.warn('Supabase syncNotificationToSupabase error:', e.message);
+    }
+  }
+
+  public async syncAuditLogToSupabase(log: AuditLog): Promise<void> {
+    if (!isPgConfigured) return;
+    try {
+      await queryPg(
+        `INSERT INTO audit_logs (id, actor_id, actor_email, actor_role, action, entity_type, entity_id, metadata, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         ON CONFLICT (id) DO NOTHING;`,
+        [
+          log.id,
+          log.actor_id || null,
+          log.actor_email || null,
+          log.actor_role || null,
+          log.action,
+          log.entity_type,
+          log.entity_id,
+          JSON.stringify(log.metadata || {}),
+          log.created_at || new Date().toISOString(),
+        ]
+      );
+    } catch (e: any) {
+      console.warn('Supabase syncAuditLogToSupabase error:', e.message);
     }
   }
 
@@ -307,10 +511,39 @@ class ServerDatabase {
     if (!isPgConfigured) return;
     try {
       const s = this.load();
-      const issuesRows = await queryPg('SELECT * FROM issues ORDER BY created_at DESC;');
-      const evidenceRows = await queryPg('SELECT * FROM issue_evidence;');
-      const timelineRows = await queryPg('SELECT * FROM timeline_events ORDER BY created_at ASC;');
-      const projectsRows = await queryPg('SELECT * FROM projects;');
+      const [issuesRows, evidenceRows, timelineRows, projectsRows, profileRows, verificationRows, escalationRows] =
+        await Promise.all([
+          queryPg('SELECT * FROM issues ORDER BY created_at DESC;'),
+          queryPg('SELECT * FROM issue_evidence;'),
+          queryPg('SELECT * FROM timeline_events ORDER BY created_at ASC;'),
+          queryPg('SELECT * FROM projects;'),
+          queryPg('SELECT * FROM profiles;'),
+          queryPg('SELECT * FROM verifications;'),
+          queryPg('SELECT * FROM escalations;'),
+        ]);
+
+      if (profileRows && profileRows.length > 0) {
+        for (const p of profileRows) {
+          const idx = s.users.findIndex((u) => u.id === p.id || u.email.toLowerCase() === p.email.toLowerCase());
+          const userObj = {
+            id: p.id,
+            full_name: p.full_name,
+            email: p.email,
+            phone: p.phone || '',
+            role: p.role,
+            department_id: p.department_id || undefined,
+            preferred_language: p.preferred_language || 'en',
+            area: p.area || '',
+            password_hash: p.password_hash || 'civiclens123',
+            created_at: p.created_at,
+          };
+          if (idx >= 0) {
+            s.users[idx] = { ...s.users[idx], ...userObj };
+          } else {
+            s.users.push(userObj);
+          }
+        }
+      }
 
       if (issuesRows && issuesRows.length > 0) {
         const evidenceByIssue: Record<string, any[]> = {};
@@ -353,6 +586,38 @@ class ServerDatabase {
           });
         }
 
+        const verificationsByIssue: Record<string, any> = {};
+        if (verificationRows) {
+          for (const v of verificationRows) {
+            verificationsByIssue[v.issue_id] = {
+              id: v.id,
+              issue_id: v.issue_id,
+              citizen_id: v.citizen_id,
+              result: v.result,
+              comment: v.comment,
+              new_evidence_url: v.new_evidence_url,
+              created_at: v.created_at,
+            };
+          }
+        }
+
+        const escalationsByIssue: Record<string, any[]> = {};
+        if (escalationRows) {
+          for (const esc of escalationRows) {
+            if (!escalationsByIssue[esc.issue_id]) escalationsByIssue[esc.issue_id] = [];
+            escalationsByIssue[esc.issue_id].push({
+              id: esc.id,
+              escalation_code: esc.escalation_code,
+              issue_id: esc.issue_id,
+              raised_by: esc.raised_by,
+              reason: esc.reason,
+              details: esc.details,
+              status: esc.status,
+              created_at: esc.created_at,
+            });
+          }
+        }
+
         const hydratedIssues: CivicIssue[] = issuesRows.map((row: any) => {
           const dept = s.departments.find((d) => d.id === row.department_id);
           const ward = s.jurisdictions.find((j) => j.id === row.jurisdiction_id);
@@ -389,6 +654,8 @@ class ServerDatabase {
             closed_at: row.closed_at,
             evidence: evidenceByIssue[row.id] || [],
             timeline: timelineByIssue[row.id] || [],
+            verification: verificationsByIssue[row.id] || null,
+            escalations: escalationsByIssue[row.id] || [],
           };
         });
 
@@ -432,7 +699,7 @@ class ServerDatabase {
     return s.users.find((u) => u.id === id);
   }
 
-  public createUser(userData: {
+  public async createUser(userData: {
     full_name: string;
     email: string;
     password?: string;
@@ -440,7 +707,7 @@ class ServerDatabase {
     role?: UserRole;
     preferred_language?: 'en' | 'ta';
     area?: string;
-  }) {
+  }): Promise<UserProfile> {
     const s = this.load();
     const existing = this.findUserByEmail(userData.email);
     if (existing) {
@@ -470,6 +737,7 @@ class ServerDatabase {
     });
 
     this.save();
+    await this.syncUserToSupabase(newUser);
     const { password_hash, ...profile } = newUser;
     return profile;
   }
@@ -583,7 +851,7 @@ class ServerDatabase {
     );
   }
 
-  public createIssue(
+  public async createIssue(
     data: {
       title: string;
       description: string;
@@ -598,7 +866,7 @@ class ServerDatabase {
       authenticity?: EvidenceAuthenticity;
     },
     citizen: UserProfile
-  ): CivicIssue {
+  ): Promise<CivicIssue> {
     if (data.authenticity?.is_ai_generated) {
       throw new Error(
         'Complaint rejected: The attached photograph was detected as AI-generated/synthetic. Only authentic camera photos can be submitted.'
@@ -714,17 +982,21 @@ class ServerDatabase {
     });
 
     this.save();
-    this.syncIssueToSupabase(newIssue).catch((err) => console.error('Supabase async sync error:', err));
+    try {
+      await this.syncIssueToSupabase(newIssue);
+    } catch (err: any) {
+      console.error('Supabase synchronous sync error during createIssue:', err);
+    }
     return newIssue;
   }
 
-  public updateIssueStatus(
+  public async updateIssueStatus(
     issueId: string,
     newStatus: IssueStatus,
     note?: string,
     actor?: UserProfile,
     evidenceUrl?: string
-  ): CivicIssue {
+  ): Promise<CivicIssue> {
     const s = this.load();
     const issue = s.issues.find((i) => i.id === issueId);
     if (!issue) {
@@ -806,16 +1078,20 @@ class ServerDatabase {
     }
 
     this.save();
-    this.syncIssueToSupabase(issue).catch((err) => console.error('Supabase async sync error:', err));
+    try {
+      await this.syncIssueToSupabase(issue);
+    } catch (err: any) {
+      console.error('Supabase synchronous sync error during updateIssueStatus:', err);
+    }
     return issue;
   }
 
-  public assignFieldWorker(
+  public async assignFieldWorker(
     issueId: string,
     fieldWorkerId: string,
     note?: string,
     actor?: UserProfile
-  ): CivicIssue {
+  ): Promise<CivicIssue> {
     const s = this.load();
     const issue = s.issues.find((i) => i.id === issueId);
     if (!issue) throw new Error('Issue not found');
@@ -864,17 +1140,21 @@ class ServerDatabase {
     });
 
     this.save();
-    this.syncIssueToSupabase(issue).catch((err) => console.error('Supabase async sync error:', err));
+    try {
+      await this.syncIssueToSupabase(issue);
+    } catch (err: any) {
+      console.error('Supabase synchronous sync error during assignFieldWorker:', err);
+    }
     return issue;
   }
 
-  public submitFieldWork(
+  public async submitFieldWork(
     issueId: string,
     notes: string,
     photoDataUrl?: string,
     isCompleted: boolean = false,
     worker?: UserProfile
-  ): CivicIssue {
+  ): Promise<CivicIssue> {
     const s = this.load();
     const issue = s.issues.find((i) => i.id === issueId);
     if (!issue) throw new Error('Issue not found');
@@ -931,17 +1211,21 @@ class ServerDatabase {
     }
 
     this.save();
-    this.syncIssueToSupabase(issue).catch((err) => console.error('Supabase async sync error:', err));
+    try {
+      await this.syncIssueToSupabase(issue);
+    } catch (err: any) {
+      console.error('Supabase synchronous sync error during submitFieldWork:', err);
+    }
     return issue;
   }
 
-  public verifyResolution(
+  public async verifyResolution(
     issueId: string,
     result: VerificationResult,
     comment: string,
     newEvidenceUrl?: string,
     citizen?: UserProfile
-  ): CivicIssue {
+  ): Promise<CivicIssue> {
     const s = this.load();
     const issue = s.issues.find((i) => i.id === issueId);
     if (!issue) throw new Error('Issue not found');
@@ -1048,15 +1332,19 @@ class ServerDatabase {
     }
 
     this.save();
-    this.syncIssueToSupabase(issue).catch((err) => console.error('Supabase async sync error:', err));
+    try {
+      await this.syncIssueToSupabase(issue);
+    } catch (err: any) {
+      console.error('Supabase synchronous sync error during verifyResolution:', err);
+    }
     return issue;
   }
 
-  public vouchIssueResolution(
+  public async vouchIssueResolution(
     issueId: string,
     user: UserProfile,
     comment?: string
-  ): CivicIssue {
+  ): Promise<CivicIssue> {
     const s = this.load();
     const issue = s.issues.find((i) => i.id === issueId);
     if (!issue) throw new Error('Issue not found');
@@ -1094,15 +1382,20 @@ class ServerDatabase {
     });
 
     this.save();
+    try {
+      await this.syncIssueToSupabase(issue);
+    } catch (err: any) {
+      console.error('Supabase synchronous sync error during vouchIssueResolution:', err);
+    }
     return issue;
   }
 
-  public escalateIssue(
+  public async escalateIssue(
     issueId: string,
     reason: string,
     details?: string,
     citizen?: UserProfile
-  ): CivicIssue {
+  ): Promise<CivicIssue> {
     const s = this.load();
     const issue = s.issues.find((i) => i.id === issueId);
     if (!issue) throw new Error('Issue not found');
@@ -1162,7 +1455,11 @@ class ServerDatabase {
     });
 
     this.save();
-    this.syncIssueToSupabase(issue).catch((err) => console.error('Supabase async sync error:', err));
+    try {
+      await this.syncIssueToSupabase(issue);
+    } catch (err: any) {
+      console.error('Supabase synchronous sync error during escalateIssue:', err);
+    }
     return issue;
   }
 
@@ -2247,12 +2544,12 @@ class ServerDatabase {
     return { notice_id, issued_at, penalty_amount: penaltyAmount, status: 'SERVED_TO_CONTRACTOR' };
   }
 
-  public convertClusterToCapitalProject(
+  public async convertClusterToCapitalProject(
     clusterKey: string,
     title: string,
     budget: number,
     departmentId: string = 'dept-highways'
-  ): PublicProject {
+  ): Promise<PublicProject> {
     const s = this.load();
     const dept = s.departments.find((d) => d.id === departmentId) || s.departments[0];
     const newProject: PublicProject = {
@@ -2276,6 +2573,11 @@ class ServerDatabase {
     if (!s.projects) s.projects = [];
     s.projects.unshift(newProject);
     this.save();
+    try {
+      await this.syncProjectToSupabase(newProject);
+    } catch (err: any) {
+      console.error('Supabase synchronous sync error during convertClusterToCapitalProject:', err);
+    }
     return newProject;
   }
 
@@ -2392,6 +2694,9 @@ class ServerDatabase {
       created_at: new Date().toISOString(),
     };
     s.notifications.unshift(newNotif);
+    this.syncNotificationToSupabase(newNotif).catch((err) =>
+      console.warn('Supabase notification sync notice:', err.message)
+    );
   }
 
   private addAuditLogInternal(
@@ -2404,6 +2709,9 @@ class ServerDatabase {
       created_at: new Date().toISOString(),
     };
     s.auditLogs.unshift(newAudit);
+    this.syncAuditLogToSupabase(newAudit).catch((err) =>
+      console.warn('Supabase audit log sync notice:', err.message)
+    );
   }
 }
 

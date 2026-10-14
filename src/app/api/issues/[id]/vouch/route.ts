@@ -6,6 +6,7 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
+    await serverDb.ensureHydrated();
     const body = await req.json();
     const userId = body.userId;
     const comment = body.comment;
@@ -17,7 +18,7 @@ export async function POST(
       role: 'citizen',
     };
 
-    const updated = serverDb.vouchIssueResolution(params.id, user as any, comment);
+    const updated = await serverDb.vouchIssueResolution(params.id, user as any, comment);
     return NextResponse.json({ success: true, issue: updated });
   } catch (error: any) {
     console.error('Error vouching issue resolution:', error);
