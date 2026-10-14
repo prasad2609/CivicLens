@@ -96,6 +96,11 @@ class ServerDatabase {
 
   private constructor() {
     this.load();
+    if (isPgConfigured) {
+      this.hydrateFromSupabase().catch((err) => {
+        console.warn('Initial Supabase hydration notice:', err.message);
+      });
+    }
   }
 
   public static getInstance(): ServerDatabase {
@@ -253,6 +258,29 @@ class ServerDatabase {
         }
       }
 
+      if (issue.timeline && Array.isArray(issue.timeline)) {
+        for (const t of issue.timeline) {
+          await queryPg(
+            `INSERT INTO timeline_events (id, issue_id, actor_id, actor_name, actor_role, event_type, old_status, new_status, note, evidence_url, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+             ON CONFLICT (id) DO UPDATE SET note = EXCLUDED.note;`,
+            [
+              t.id,
+              issue.id,
+              t.actor_id || null,
+              t.actor_name || 'System',
+              t.actor_role || 'system',
+              t.event_type,
+              t.old_status || null,
+              t.new_status || null,
+              t.note || null,
+              t.evidence_url || null,
+              t.created_at || new Date().toISOString(),
+            ]
+          );
+        }
+      }
+
       if (issue.verification) {
         const v = issue.verification;
         await queryPg(
@@ -272,6 +300,124 @@ class ServerDatabase {
       }
     } catch (e) {
       console.error('Background sync to Supabase failed:', e);
+    }
+  }
+
+  public async hydrateFromSupabase(): Promise<void> {
+    if (!isPgConfigured) return;
+    try {
+      const s = this.load();
+      const issuesRows = await queryPg('SELECT * FROM issues ORDER BY created_at DESC;');
+      const evidenceRows = await queryPg('SELECT * FROM issue_evidence;');
+      const timelineRows = await queryPg('SELECT * FROM timeline_events ORDER BY created_at ASC;');
+      const projectsRows = await queryPg('SELECT * FROM projects;');
+
+      if (issuesRows && issuesRows.length > 0) {
+        const evidenceByIssue: Record<string, any[]> = {};
+        for (const ev of evidenceRows) {
+          if (!evidenceByIssue[ev.issue_id]) evidenceByIssue[ev.issue_id] = [];
+          let authenticity = null;
+          if (ev.authenticity) {
+            try {
+              authenticity = typeof ev.authenticity === 'string' ? JSON.parse(ev.authenticity) : ev.authenticity;
+            } catch {}
+          }
+          evidenceByIssue[ev.issue_id].push({
+            id: ev.id,
+            issue_id: ev.issue_id,
+            uploaded_by: ev.uploaded_by,
+            file_path: ev.file_path,
+            file_type: ev.file_type,
+            evidence_type: ev.evidence_type,
+            caption: ev.caption,
+            authenticity,
+            created_at: ev.created_at,
+          });
+        }
+
+        const timelineByIssue: Record<string, any[]> = {};
+        for (const t of timelineRows) {
+          if (!timelineByIssue[t.issue_id]) timelineByIssue[t.issue_id] = [];
+          timelineByIssue[t.issue_id].push({
+            id: t.id,
+            issue_id: t.issue_id,
+            actor_id: t.actor_id,
+            actor_name: t.actor_name,
+            actor_role: t.actor_role,
+            event_type: t.event_type,
+            old_status: t.old_status,
+            new_status: t.new_status,
+            note: t.note,
+            evidence_url: t.evidence_url,
+            created_at: t.created_at,
+          });
+        }
+
+        const hydratedIssues: CivicIssue[] = issuesRows.map((row: any) => {
+          const dept = s.departments.find((d) => d.id === row.department_id);
+          const ward = s.jurisdictions.find((j) => j.id === row.jurisdiction_id);
+          const cat = s.categories.find((c) => c.id === row.category_id);
+          const citizen = s.users.find((u) => u.id === row.citizen_id);
+
+          return {
+            id: row.id,
+            complaint_code: row.complaint_code,
+            citizen_id: row.citizen_id,
+            citizen_name: citizen?.full_name || 'Citizen Reporter',
+            category_id: row.category_id,
+            category_name: cat?.name || 'Municipal Infrastructure',
+            category_code: cat?.code || 'infra',
+            title: row.title,
+            description: row.description,
+            severity: row.severity,
+            status: row.status,
+            latitude: row.latitude,
+            longitude: row.longitude,
+            location_text: row.location_text,
+            jurisdiction_id: row.jurisdiction_id,
+            jurisdiction_name: ward?.name,
+            department_id: row.department_id,
+            department_name: dept?.name,
+            assigned_officer_id: row.assigned_officer_id,
+            assigned_field_worker_id: row.assigned_field_worker_id,
+            is_overdue: Boolean(row.is_overdue),
+            sla_target_date: row.sla_target_date,
+            ai_verification_status: row.ai_verification_status,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+            resolved_at: row.resolved_at,
+            closed_at: row.closed_at,
+            evidence: evidenceByIssue[row.id] || [],
+            timeline: timelineByIssue[row.id] || [],
+          };
+        });
+
+        s.issues = hydratedIssues;
+        if (projectsRows && projectsRows.length > 0) {
+          s.projects = projectsRows.map((p: any) => ({
+            id: p.id,
+            name: p.name,
+            description: p.description,
+            category: p.category,
+            location: p.location,
+            agency: p.agency,
+            status: p.status,
+            start_date: p.start_date,
+            expected_completion: p.expected_completion,
+            approved_amount: Number(p.approved_amount),
+            expenditure: Number(p.expenditure),
+            funding_source: p.funding_source,
+            source_reference: p.source_reference,
+            demo_data: Boolean(p.demo_data),
+            progress_pct: Number(p.progress_pct || 0),
+            delay_days: Number(p.delay_days || 0),
+            created_at: p.created_at,
+          }));
+        }
+        this.save();
+      }
+    } catch (e: any) {
+      console.warn('Supabase hydration warning:', e.message);
     }
   }
 
