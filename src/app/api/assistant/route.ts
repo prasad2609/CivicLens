@@ -78,29 +78,53 @@ async function tryCallGemini(
 
   try {
     const systemPrompt = buildMunicipalSystemPrompt(language);
-    const models = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+    // Verified available & active models for Gemini
+    const models = [
+      'gemini-flash-lite-latest',
+      'gemini-3.1-flash-lite',
+      'gemini-3.5-flash-lite',
+      'gemini-3.8-flash',
+      'gemini-3.7-flash',
+      'gemini-flash-latest',
+    ];
+
+    // Format chat history into Gemini turns
+    const historyTurns = history.slice(-6).map((h) => ({
+      role: h.sender === 'user' ? 'user' : 'model',
+      parts: [{ text: h.text }],
+    }));
 
     for (const model of models) {
       try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 12000); // 12s timeout
+
         const res = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
+              systemInstruction: {
+                parts: [{ text: systemPrompt }],
+              },
               contents: [
+                ...historyTurns,
                 {
                   role: 'user',
-                  parts: [{ text: `${systemPrompt}\n\nUser Question: ${query}` }],
+                  parts: [{ text: query }],
                 },
               ],
               generationConfig: {
                 temperature: 0.2,
-                maxOutputTokens: 1200,
+                maxOutputTokens: 1500,
               },
             }),
+            signal: controller.signal,
           }
         );
+
+        clearTimeout(timeoutId);
 
         if (res.ok) {
           const data = await res.json();
@@ -112,12 +136,15 @@ async function tryCallGemini(
                 { label: 'File Complaint', href: '/report' },
                 { label: 'Public Ledger', href: '/issues' },
                 { label: 'Ward Map', href: '/map' },
+                { label: 'Constituency Pulse', href: '/constituency-pulse' },
               ],
               source: 'gemini-llm',
+              model: model,
             };
           }
         }
-      } catch {
+      } catch (e: any) {
+        console.warn(`Gemini model ${model} error:`, e.message);
         continue;
       }
     }

@@ -12,7 +12,8 @@ import { CivicIssue, Department, Jurisdiction, PublicProject } from '@/types';
 export interface CivicAssistantResult {
   text: string;
   actions?: Array<{ label: string; href: string }>;
-  source: 'gemini-llm' | 'groq-llm' | 'openai-llm' | 'live-ledger-engine';
+  source: 'gemini-llm' | 'groq-llm' | 'openai-llm' | 'live-ledger-engine' | (string & {});
+  model?: string;
 }
 
 // ---------------------------------------------------------------------------
